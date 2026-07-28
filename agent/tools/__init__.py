@@ -1,1 +1,1 @@
-from . import calculator  # noqa: F401
+from . import calculator, web_search  # noqa: F401
