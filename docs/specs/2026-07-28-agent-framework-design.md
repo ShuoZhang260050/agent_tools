@@ -21,7 +21,7 @@
 
 | 维度 | 决策 | 理由 |
 |------|------|------|
-| Agent 核心 | LangGraph 预置 `create_react_agent`（ReAct） | 最少代码跑通，工具/LLM/记忆可插拔；预留换图接缝 |
+| Agent 核心 | `langchain.agents.create_agent` + middleware（ReAct 工具循环） | `create_react_agent` 已弃用；`create_agent` 是官方推荐替代，middleware 系统更契合"可扩展"；工具/LLM/记忆可插拔 |
 | LLM 接入 | 可配置多后端，OpenAI 兼容路径为主 | 一条路径覆盖官方/国产/本地模型 |
 | 交互方式 | 库 + CLI + HTTP API 全要 | 核心是 graph，前后端都是薄封装 |
 | 内置工具 | Web 搜索 + 计算器 | 演示机制，无安全风险 |
@@ -43,8 +43,8 @@
                          ▼
 ┌─────────────────────────────────────────────────────────┐
 │  核心层  graph = build_graph()                           │
-│  create_react_agent(llm, tools, checkpointer,            │
-│                     state_modifier[prompt+裁剪])          │
+│  create_agent(model, tools, system_prompt,            │
+│              middleware=[trim], checkpointer)           │
 └───┬──────────┬──────────────┬───────────────────────────┘
     ▼          ▼              ▼
 ┌────────┐ ┌────────┐ ┌──────────────────┐
@@ -179,14 +179,14 @@ def web_search(query: str) -> str:
 上下文处理分三层：
 
 **第 1 层 — 会话内历史（thread-scoped memory，内置）**
-- 每轮对话 = 一个 `thread_id`。`create_react_agent` 的 state 中 `messages` 列表由 SQLite checkpointer 按 `thread_id` 持久化。
+- 每轮对话 = 一个 `thread_id`。`create_agent` 的 state 中 `messages` 列表由 SQLite checkpointer 按 `thread_id` 持久化。
 - **CLI**：`agent chat` 启动生成 uuid `thread_id`；`--thread <id>` 可恢复指定会话。
 - **API**：客户端请求带 `thread_id`，服务端用 `{"configurable": {"thread_id": ...}}` 调 graph，自动加载该线程完整历史。
 
 **第 2 层 — 上下文窗口管理（内置，滑动窗口）**
-- `create_react_agent` 的 `state_modifier` 钩子，在每次调 LLM 前裁剪 messages。
-- 用 `langchain_core.messages.trim_messages(strategy="last", token_counter=tiktoken, max_tokens=settings.token_budget)`，保留 system prompt + 最近 N 个 token 的消息，旧消息丢弃。
-- 接口包成 `make_state_modifier(budget, system_prompt)`：该修饰函数先置 system message 于首，再裁剪。只向 `create_react_agent` 传这一个 `state_modifier`，**不**再单独传 `prompt=`，规避二者同传在不同 langgraph-prebuilt 版本间的歧义。将来换"摘要压缩"只改这一个函数。
+- 用 `langchain.agents.middleware.wrap_model_call` 写一个 trim 中间件，在每次调 LLM 前对 `request.messages` 做瞬时裁剪（不写回 state，历史不丢失）。
+- 用 `langchain_core.messages.trim_messages(strategy="last", token_counter=request.model, max_tokens=settings.token_budget, start_on="human")`，保留最近 N 个 token 的消息，旧消息在本轮丢弃（仍在 checkpoint 里）。
+- 接口包成 `make_trim_middleware(budget)`：该修饰函数先置 system message 于首，再裁剪。只向 `create_react_agent` 传这一个 `state_modifier`，**不**再单独传 `prompt=`，规避二者同传在不同 langgraph-prebuilt 版本间的歧义。将来换"摘要压缩"只改这一个函数。
 
 **第 3 层 — 跨会话长期记忆（不实现，预留）**
 - LangGraph `Store` API（按用户命名空间跨 thread 共享事实/偏好）。架构留注入点，文档标注为扩展点。
@@ -197,17 +197,18 @@ def build_checkpointer(settings: Settings) -> BaseCheckpointSaver:
     return SqliteSaver.from_conn_string(settings.sqlite_path)  # 上下文管理连接
 
 # memory/trimming.py
-def make_state_modifier(budget: int, system_prompt):
-    def modifier(state):
-        messages = [SystemMessage(content=system_prompt(state))] + state["messages"]
-        return trim_messages(
-            messages,
+def make_trim_middleware(budget: int):
+    @wrap_model_call(name="TrimMessagesMiddleware")
+    def trim(request, handler):
+        trimmed = trim_messages(
+            request.messages,
             strategy="last",
-            token_counter=tiktoken,
+            token_counter=request.model,
             max_tokens=budget,
-            include_system=True,
+            start_on="human",
         )
-    return modifier
+        return handler(request.override(messages=trimmed))
+    return trim
 ```
 
 ### 5.5 prompts.py — System Prompt
@@ -215,8 +216,7 @@ def make_state_modifier(budget: int, system_prompt):
 函数式，接收 state、返回 system message 字符串。起步为静态提示，但用函数形式包好，便于将来注入动态上下文（当前日期、用户信息、检索知识）。
 
 ```python
-def system_prompt(state) -> str:
-    return "你是一个乐于助人的助手。可调用工具辅助回答。"
+SYSTEM_PROMPT = "你是一个乐于助人的助手。当需要最新信息或精确计算时，可调用提供的工具。"
 ```
 
 ### 5.6 graph.py — 核心装配
@@ -226,13 +226,15 @@ def build_graph(settings: Settings | None = None):
     settings = settings or Settings()
     llm = build_llm(settings)
     tools = get_tools()
-    checkpointer = build_checkpointer(settings)
-    return create_react_agent(
-        model=llm,
-        tools=tools,
-        checkpointer=checkpointer,
-        state_modifier=make_state_modifier(settings.token_budget, system_prompt),
-    )
+    cm = build_checkpointer(settings)
+    with cm as checkpointer:
+        return create_agent(
+            model=llm,
+            tools=tools,
+            system_prompt=SYSTEM_PROMPT,
+            middleware=[make_trim_middleware(settings.token_budget)],
+            checkpointer=checkpointer,
+        )
 ```
 
 ### 5.7 cli.py — 命令行（click）

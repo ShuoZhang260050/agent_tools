@@ -21,6 +21,9 @@ env/
 # Env / secrets
 .env
 
+# Tooling scratch
+.superpowers/
+
 # Databases / runtime data
 *.sqlite
 *.sqlite3
