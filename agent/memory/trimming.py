@@ -7,7 +7,7 @@ def make_trim_middleware(max_tokens: int):
         trimmed = trim_messages(
             request.messages,
             strategy="last",
-            token_counter=request.model,
+            token_counter="approximate",
             max_tokens=max_tokens,
             start_on="human",
         )
