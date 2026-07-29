@@ -99,6 +99,32 @@
   .typing-dot:nth-child(2) { animation-delay: 0.2s; }
   .typing-dot:nth-child(3) { animation-delay: 0.4s; }
   @keyframes blink { 0%,80%,100% { opacity: 0.2; } 40% { opacity: 1; } }
+  /* 会话项 */
+  .session-item { display: flex; align-items: center; justify-content: space-between; }
+  .session-item .sid { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .session-item .del-btn { opacity: 0; background: none; border: none; color: #e53e3e; cursor: pointer; font-size: 14px; padding: 0 4px; flex-shrink: 0; }
+  .session-item:hover .del-btn { opacity: 0.7; }
+  .session-item .del-btn:hover { opacity: 1; }
+  .session-item .rename-input { width: 100%; border: 1px solid var(--accent); border-radius: 4px; padding: 2px 6px; font-size: 13px; font-family: inherit; outline: none; }
+  /* 文档区 */
+  #doc-section { border-top: 1px solid var(--border); padding: 0 16px 8px; max-height: 200px; overflow-y: auto; }
+  #doc-section h3 { font-size: 12px; color: var(--muted); margin: 10px 0 6px; font-weight: 600; }
+  .doc-item { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; border-radius: 6px; font-size: 12px; margin-bottom: 2px; }
+  .doc-item:hover { background: #f0f0f2; }
+  .doc-item .doc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .doc-item .doc-del { opacity: 0; background: none; border: none; color: #e53e3e; cursor: pointer; font-size: 12px; padding: 0 2px; flex-shrink: 0; }
+  .doc-item:hover .doc-del { opacity: 0.7; }
+  /* 上传按钮 */
+  #upload-btn { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 12px; width: 44px; height: 44px; cursor: pointer; font-size: 18px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+  #upload-btn:hover { border-color: var(--accent); }
+  /* 追踪面板 */
+  #trace-panel { max-height: 300px; overflow-y: auto; background: var(--panel); border-bottom: 1px solid var(--border); display: none; }
+  #trace-panel table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  #trace-panel th { text-align: left; padding: 6px 12px; border-bottom: 1px solid var(--border); color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--panel); }
+  #trace-panel td { padding: 4px 12px; border-bottom: 1px solid #f0f0f2; }
+  #trace-panel tr.llm td { background: #f0fdf4; }
+  #trace-panel tr.tool td { background: #eff6ff; }
+  .trace-btn { font-size: 12px; color: var(--accent); cursor: pointer; margin-left: 12px; font-weight: 400; }
 </style>
 </head>
 <body>
@@ -120,12 +146,19 @@
     <header>会话 <span id="cur-user" style="font-weight:400;color:var(--muted);font-size:12px;"></span> <a href="#" onclick="logout();return false;" style="font-size:12px;color:var(--accent);margin-left:8px;">退出</a></header>
     <button id="new-btn">+ 新建会话</button>
     <div id="session-list"></div>
+    <div id="doc-section">
+      <h3>文档知识库 <span style="font-weight:400;color:var(--muted);">（可问 Agent 检索）</span></h3>
+      <div id="doc-list"></div>
+    </div>
   </div>
   <div id="main">
-    <div id="header">Agent Chat <span id="cur-tid" style="font-weight:400;color:var(--muted);font-size:12px;"></span></div>
+    <div id="header">Agent Chat <span id="cur-tid" style="font-weight:400;color:var(--muted);font-size:12px;"></span><span class="trace-btn" id="trace-toggle" onclick="toggleTrace()">调试</span></div>
+    <div id="trace-panel"><table><thead><tr><th>时间</th><th>类型</th><th>名称</th><th>耗时</th><th>Tokens</th></tr></thead><tbody id="trace-body"></tbody></table></div>
     <div id="messages"></div>
     <div id="input-bar">
       <div id="input-wrap">
+        <input type="file" id="file-input" style="display:none" accept=".txt,.md,.pdf">
+        <button id="upload-btn" onclick="document.getElementById('file-input').click()">📎</button>
         <textarea id="msg-input" placeholder="输入消息，Enter 发送，Shift+Enter 换行" rows="1"></textarea>
         <button id="send-btn">➤</button>
       </div>
@@ -142,11 +175,15 @@ const inputEl = $("#msg-input");
 const sendBtn = $("#send-btn");
 const sessionListEl = $("#session-list");
 const curTidEl = $("#cur-tid");
+const docListEl = $("#doc-list");
+const tracePanelEl = $("#trace-panel");
+const traceBodyEl = $("#trace-body");
 
 let currentTid = null;
 let sending = false;
 let authToken = localStorage.getItem("agent_token") || "";
 let authMode = "login";
+let traceVisible = false;
 
 function getToken() { return localStorage.getItem("agent_token") || ""; }
 function authHeaders() {
@@ -162,6 +199,7 @@ function checkAuth() {
     document.getElementById("cur-user").textContent = u ? "· " + u : "";
     newSession();
     loadSessions();
+    loadDocuments();
   } else {
     document.getElementById("auth-view").style.display = "flex";
     document.getElementById("app").style.display = "none";
@@ -380,12 +418,57 @@ async function loadSessions() {
     data.sessions.forEach((s) => {
       const item = document.createElement("div");
       item.className = "session-item" + (s.thread_id === currentTid ? " active" : "");
-      const preview = s.thread_id.length > 18 ? s.thread_id.slice(0, 18) + "…" : s.thread_id;
-      item.innerHTML = '<div class="sid">' + escapeHtml(preview) + '</div>' +
-        '<div class="meta">' + s.message_count + ' 条消息</div>';
+      const titleText = s.title || s.thread_id.slice(0, 18) + "…";
+      item.innerHTML = '<div class="sid">' + escapeHtml(titleText) + '</div>' +
+        '<button class="del-btn" title="删除">✕</button>';
+      const sidEl = item.querySelector(".sid");
+      sidEl.title = "双击重命名";
+      sidEl.addEventListener("dblclick", () => startRename(item, s.thread_id, sidEl));
+      item.querySelector(".del-btn").onclick = (e) => { e.stopPropagation(); deleteSession(s.thread_id); };
       item.onclick = () => selectSession(s.thread_id);
+      const meta = document.createElement("div");
+      meta.className = "meta";
+      meta.textContent = s.message_count + " 条消息";
+      sidEl.appendChild(meta);
       sessionListEl.appendChild(item);
     });
+  } catch (e) { console.error(e); }
+}
+
+function startRename(item, tid, sidEl) {
+  const old = sidEl.textContent.replace(/\n.*$/, "").trim();
+  const input = document.createElement("input");
+  input.className = "rename-input";
+  input.value = old;
+  sidEl.innerHTML = "";
+  sidEl.appendChild(input);
+  input.focus();
+  input.select();
+  const finish = async (save) => {
+    if (save && input.value.trim()) {
+      try {
+        await fetch("/sessions/" + encodeURIComponent(tid), {
+          method: "PATCH",
+          headers: authHeaders(),
+          body: JSON.stringify({ title: input.value.trim() }),
+        });
+      } catch (e) { console.error(e); }
+    }
+    loadSessions();
+  };
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); finish(true); }
+    if (e.key === "Escape") { e.preventDefault(); finish(false); }
+  });
+  input.addEventListener("blur", () => finish(true));
+}
+
+async function deleteSession(tid) {
+  if (!confirm("确定删除此会话？")) return;
+  try {
+    await fetch("/sessions/" + encodeURIComponent(tid), { method: "DELETE", headers: authHeaders() });
+    if (currentTid === tid) { currentTid = null; newSession(); }
+    loadSessions();
   } catch (e) { console.error(e); }
 }
 
@@ -432,6 +515,91 @@ inputEl.addEventListener("input", () => {
   inputEl.style.height = "auto";
   inputEl.style.height = Math.min(inputEl.scrollHeight, 160) + "px";
 });
+
+document.getElementById("file-input").addEventListener("change", uploadFile);
+
+async function uploadFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const formData = new FormData();
+  formData.append("file", file);
+  addMsg("user", "📎 上传文档: " + file.name);
+  showTyping();
+  try {
+    const resp = await fetch("/documents", {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + getToken() },
+      body: formData,
+    });
+    const data = await resp.json();
+    removeTyping();
+    if (!resp.ok) {
+      addMsg("assistant", "⚠️ 上传失败: " + (data.detail || "未知错误"));
+    } else {
+      addMsg("assistant", "✅ 文档已入库: " + data.filename + "（" + data.chunks + " 个片段）。你可以让我检索文档内容。");
+      loadDocuments();
+    }
+  } catch (err) {
+    removeTyping();
+    addMsg("assistant", "⚠️ 上传失败: " + err.message);
+  }
+  e.target.value = "";
+}
+
+async function loadDocuments() {
+  try {
+    const resp = await fetch("/documents", { headers: authHeaders() });
+    const data = await resp.json();
+    docListEl.innerHTML = "";
+    if (!data.documents || data.documents.length === 0) {
+      docListEl.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:4px 8px;">暂无文档</div>';
+      return;
+    }
+    data.documents.forEach((d) => {
+      const item = document.createElement("div");
+      item.className = "doc-item";
+      item.innerHTML = '<span class="doc-name">📄 ' + escapeHtml(d.filename) + '</span>' +
+        '<button class="doc-del" title="删除">✕</button>';
+      item.querySelector(".doc-del").onclick = () => deleteDocument(d.id, d.filename);
+      docListEl.appendChild(item);
+    });
+  } catch (e) { console.error(e); }
+}
+
+async function deleteDocument(docId, filename) {
+  if (!confirm("确定删除文档 " + filename + " ？")) return;
+  try {
+    await fetch("/documents/" + docId, { method: "DELETE", headers: authHeaders() });
+    loadDocuments();
+  } catch (e) { console.error(e); }
+}
+
+function toggleTrace() {
+  traceVisible = !traceVisible;
+  tracePanelEl.style.display = traceVisible ? "block" : "none";
+  if (traceVisible) loadTraces();
+}
+
+async function loadTraces() {
+  try {
+    const url = "/traces" + (currentTid ? "?thread_id=" + encodeURIComponent(currentTid) : "");
+    const resp = await fetch(url, { headers: authHeaders() });
+    const data = await resp.json();
+    traceBodyEl.innerHTML = "";
+    if (!data.traces || data.traces.length === 0) {
+      traceBodyEl.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:12px;">暂无追踪记录</td></tr>';
+      return;
+    }
+    data.traces.forEach((t) => {
+      const tr = document.createElement("tr");
+      tr.className = t.type;
+      const ts = t.timestamp ? t.timestamp.slice(11, 19) : "";
+      const tokens = t.tokens ? (t.tokens.total_tokens || "") : "";
+      tr.innerHTML = '<td>' + ts + '</td><td>' + t.type + '</td><td>' + escapeHtml(t.name || "") + '</td><td>' + (t.duration_ms || 0) + 'ms</td><td>' + tokens + '</td>';
+      traceBodyEl.appendChild(tr);
+    });
+  } catch (e) { console.error(e); }
+}
 
 newSession();
 checkAuth();

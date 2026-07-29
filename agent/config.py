@@ -17,5 +17,12 @@ class Settings(BaseSettings):
     sqlite_path: str = "checkpoints.sqlite"
     api_host: str = "0.0.0.0"
     api_port: int = 8000
+    embedding_model: str = "text-embedding-3-small"
+    embedding_base_url: str | None = None
+    embedding_api_key: SecretStr | None = None
+    rag_chunk_size: int = 500
+    rag_chunk_overlap: int = 50
+    rag_top_k: int = 3
+    enable_tracing: bool = True
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="", extra="ignore")

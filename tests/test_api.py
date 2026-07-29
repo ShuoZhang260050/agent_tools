@@ -122,6 +122,8 @@ def test_sessions(monkeypatch, tmp_path):
     monkeypatch.setattr("agent.api.get_graph", lambda: FakeGraph())
     monkeypatch.setattr("agent.api.get_user_threads",
                         lambda uid: ["t-a", "t-b"])
+    monkeypatch.setattr("agent.api.get_user_threads_with_title",
+                        lambda uid: [{"thread_id": "t-a", "title": None}, {"thread_id": "t-b", "title": None}])
     app.dependency_overrides[get_current_user] = _fake_user
     with TestClient(app) as c:
         r = c.get("/sessions")
@@ -147,4 +149,46 @@ def test_get_session(monkeypatch):
     with TestClient(app) as c:
         r = c.get("/sessions/xyz")
         assert r.status_code == 403
+    app.dependency_overrides.clear()
+
+
+def test_rename_session(monkeypatch):
+    renamed = {}
+    monkeypatch.setattr("agent.api.get_user_threads", lambda uid: ["t-a"])
+    monkeypatch.setattr("agent.api.update_thread_title",
+                        lambda uid, tid, title: renamed.update({"tid": tid, "title": title}))
+    app.dependency_overrides[get_current_user] = _fake_user
+    with TestClient(app) as c:
+        r = c.patch("/sessions/t-a", json={"title": "My Chat"})
+        assert r.status_code == 200
+        assert r.json()["title"] == "My Chat"
+    assert renamed == {"tid": "t-a", "title": "My Chat"}
+    app.dependency_overrides.clear()
+
+
+def test_delete_session(monkeypatch, tmp_path):
+    db = tmp_path / "del.sqlite"
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE checkpoints (thread_id TEXT, checkpoint_id TEXT)")
+    con.execute("INSERT INTO checkpoints VALUES ('t-a', 'c1')")
+    con.commit()
+    con.close()
+
+    deleted = {}
+    monkeypatch.setattr("agent.api.get_user_threads", lambda uid: ["t-a"])
+    monkeypatch.setattr("agent.api.delete_user_thread",
+                        lambda uid, tid: deleted.update({"tid": tid}))
+
+    class FakeSettings:
+        sqlite_path = str(db)
+    monkeypatch.setattr("agent.api.Settings", lambda: FakeSettings())
+    app.dependency_overrides[get_current_user] = _fake_user
+    with TestClient(app) as c:
+        r = c.delete("/sessions/t-a")
+        assert r.status_code == 200
+        assert r.json()["status"] == "deleted"
+    assert deleted == {"tid": "t-a"}
+    con = sqlite3.connect(db)
+    assert con.execute("SELECT COUNT(*) FROM checkpoints WHERE thread_id='t-a'").fetchone()[0] == 0
+    con.close()
     app.dependency_overrides.clear()

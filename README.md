@@ -6,12 +6,14 @@
 
 - **ReAct 工具循环**：基于 `langchain.agents.create_agent`，LLM 自主决策调用工具 -> 观察结果 -> 再决策
 - **用户认证**：JWT 登录/注册，用户隔离的记忆与会话
+- **RAG 知识库**：文档上传（txt/md/pdf）-> 分块 -> 向量化 -> 语义检索，按 user 隔离
+- **可观测性**：TracingCallbackHandler 记录每次 LLM/工具调用的耗时与 token 用量，前端调试面板可视化
 - **可插拔 LLM**：一条 OpenAI 兼容路径覆盖官方 OpenAI、智谱 GLM、通义千问、DeepSeek、本地 Ollama 等
 - **三种入口**：`import` 库 / `agent` CLI / FastAPI HTTP API（SSE 流式）
 - **SQLite 持久记忆**：按 `thread_id` 隔离，重启不丢上下文
 - **上下文工程栈**：结构化系统提示词（XML+Markdown）+ 用户记忆注入 + 摘要压缩 + 状态栏 + 任务追踪 + 预算控制 + 提示注入防御
 - **装饰器工具注册**：加工具只需 `@register @tool`，无需改中央清单
-- **完整测试**：工具单测、ReAct 循环端到端测试、认证测试、记忆隔离测试、API/CLI 测试
+- **完整测试**：76 个测试覆盖工具、ReAct 循环、认证、记忆隔离、RAG、追踪、API/CLI
 
 ## 安装
 

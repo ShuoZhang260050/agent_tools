@@ -29,9 +29,30 @@ def init_tables():
         CREATE TABLE IF NOT EXISTS user_threads (
             user_id INTEGER NOT NULL,
             thread_id TEXT NOT NULL,
+            title TEXT,
             PRIMARY KEY (user_id, thread_id)
         );
+        CREATE TABLE IF NOT EXISTS documents (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            filename TEXT NOT NULL,
+            chunk_count INTEGER NOT NULL DEFAULT 0,
+            uploaded_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS document_chunks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            doc_id INTEGER NOT NULL,
+            chunk_index INTEGER NOT NULL,
+            content TEXT NOT NULL,
+            embedding TEXT NOT NULL,
+            metadata TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
     """)
+    cols = {r[1] for r in con.execute("PRAGMA table_info(user_threads)").fetchall()}
+    if "title" not in cols:
+        con.execute("ALTER TABLE user_threads ADD COLUMN title TEXT")
     con.commit()
     con.close()
 
@@ -105,11 +126,83 @@ def get_user_threads(user_id: int) -> list[str]:
     return [r[0] for r in rows]
 
 
-def add_user_thread(user_id: int, thread_id: str):
+def get_user_threads_with_title(user_id: int) -> list[dict]:
+    con = _get_db()
+    rows = con.execute(
+        "SELECT thread_id, title FROM user_threads WHERE user_id = ? ORDER BY rowid DESC",
+        (user_id,),
+    ).fetchall()
+    con.close()
+    return [{"thread_id": r[0], "title": r[1]} for r in rows]
+
+
+def add_user_thread(user_id: int, thread_id: str, title: str | None = None):
     con = _get_db()
     con.execute(
-        "INSERT OR IGNORE INTO user_threads (user_id, thread_id) VALUES (?, ?)",
+        "INSERT OR IGNORE INTO user_threads (user_id, thread_id, title) VALUES (?, ?, ?)",
+        (user_id, thread_id, title),
+    )
+    if title is not None:
+        con.execute(
+            "UPDATE user_threads SET title = ? WHERE user_id = ? AND thread_id = ?",
+            (title, user_id, thread_id),
+        )
+    con.commit()
+    con.close()
+
+
+def update_thread_title(user_id: int, thread_id: str, title: str):
+    con = _get_db()
+    con.execute(
+        "UPDATE user_threads SET title = ? WHERE user_id = ? AND thread_id = ?",
+        (title, user_id, thread_id),
+    )
+    con.commit()
+    con.close()
+
+
+def delete_user_thread(user_id: int, thread_id: str):
+    con = _get_db()
+    con.execute(
+        "DELETE FROM user_threads WHERE user_id = ? AND thread_id = ?",
         (user_id, thread_id),
+    )
+    con.commit()
+    con.close()
+
+
+def add_document(user_id: int, filename: str, chunk_count: int) -> int:
+    con = _get_db()
+    now = datetime.now().isoformat()
+    cur = con.execute(
+        "INSERT INTO documents (user_id, filename, chunk_count, uploaded_at) VALUES (?, ?, ?, ?)",
+        (user_id, filename, chunk_count, now),
+    )
+    con.commit()
+    doc_id = cur.lastrowid
+    con.close()
+    return doc_id
+
+
+def list_documents(user_id: int) -> list[dict]:
+    con = _get_db()
+    rows = con.execute(
+        "SELECT id, filename, chunk_count, uploaded_at FROM documents WHERE user_id = ? ORDER BY uploaded_at DESC",
+        (user_id,),
+    ).fetchall()
+    con.close()
+    return [{"id": r[0], "filename": r[1], "chunk_count": r[2], "uploaded_at": r[3]} for r in rows]
+
+
+def delete_document(user_id: int, doc_id: int):
+    con = _get_db()
+    con.execute(
+        "DELETE FROM document_chunks WHERE user_id = ? AND doc_id = ?",
+        (user_id, doc_id),
+    )
+    con.execute(
+        "DELETE FROM documents WHERE id = ? AND user_id = ?",
+        (doc_id, user_id),
     )
     con.commit()
     con.close()
