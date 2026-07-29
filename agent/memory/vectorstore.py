@@ -1,5 +1,6 @@
 import json
 import sqlite3
+import time
 from datetime import datetime
 
 import numpy as np
@@ -24,6 +25,7 @@ def build_embeddings(settings: Settings) -> OpenAIEmbeddings:
         model=settings.embedding_model,
         api_key=api_key,
         base_url=base_url,
+        check_embedding_ctx_length=False,
     )
 
 
@@ -55,7 +57,23 @@ def ingest_document(
     chunks = chunk_text(text, chunk_size, chunk_overlap)
     if not chunks:
         return 0
-    vectors = embeddings.embed_documents(chunks)
+    vectors = []
+    batch_size = 10
+    for i in range(0, len(chunks), batch_size):
+        if i > 0:
+            time.sleep(1)
+        batch = chunks[i:i + batch_size]
+        for attempt in range(4):
+            try:
+                vecs = embeddings.embed_documents(batch)
+                vectors.extend(vecs)
+                break
+            except Exception as e:
+                if "429" in str(e) and attempt < 3:
+                    wait = 2 ** attempt
+                    time.sleep(wait)
+                else:
+                    raise
     con = _get_db()
     now = datetime.now().isoformat()
     try:
