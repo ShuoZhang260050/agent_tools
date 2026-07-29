@@ -57,7 +57,21 @@ def _sse(obj) -> str:
 def _serialize_msg(m) -> dict:
     cls = type(m).__name__
     if cls == "HumanMessage":
-        return {"role": "user", "content": str(m.content)}
+        content = m.content
+        if isinstance(content, list):
+            text = ""
+            image_url = None
+            for part in content:
+                if isinstance(part, dict):
+                    if part.get("type") == "text":
+                        text = part.get("text", "")
+                    elif part.get("type") == "image_url":
+                        image_url = part.get("image_url", {}).get("url")
+            d = {"role": "user", "content": text}
+            if image_url:
+                d["image"] = image_url
+            return d
+        return {"role": "user", "content": str(content)}
     if cls == "AIMessage":
         d = {"role": "assistant", "content": str(m.content or "")}
         if getattr(m, "tool_calls", None):
@@ -79,6 +93,7 @@ def _serialize_msg(m) -> dict:
 class ChatReq(BaseModel):
     message: str
     thread_id: str | None = None
+    image: str | None = None
 
 
 class AuthReq(BaseModel):
@@ -188,8 +203,16 @@ async def chat(req: ChatReq, current: dict = Depends(get_current_user)):
 
     def gen():
         try:
+            if req.image:
+                content = []
+                if req.message:
+                    content.append({"type": "text", "text": req.message})
+                content.append({"type": "image_url", "image_url": {"url": req.image}})
+                msg = HumanMessage(content=content)
+            else:
+                msg = HumanMessage(content=req.message)
             for mode, data in graph.stream(
-                {"messages": [HumanMessage(content=req.message)]},
+                {"messages": [msg]},
                 config,
                 stream_mode=["messages", "updates"],
             ):

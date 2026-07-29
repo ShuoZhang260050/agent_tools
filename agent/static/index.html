@@ -117,6 +117,11 @@
   /* 上传按钮 */
   #upload-btn { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 12px; width: 44px; height: 44px; cursor: pointer; font-size: 18px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
   #upload-btn:hover { border-color: var(--accent); }
+  #img-btn { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 12px; width: 44px; height: 44px; cursor: pointer; font-size: 18px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+  #img-btn:hover { border-color: var(--accent); }
+  #image-preview { max-width: 760px; margin: 0 auto 8px; display: none; position: relative; }
+  #image-preview img { max-width: 200px; max-height: 200px; border-radius: 8px; border: 1px solid var(--border); }
+  #image-preview .remove-img { position: absolute; top: -6px; left: 194px; background: #e53e3e; color: #fff; border: none; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 14px; line-height: 1; }
   /* 追踪面板 */
   #trace-panel { max-height: 300px; overflow-y: auto; background: var(--panel); border-bottom: 1px solid var(--border); display: none; }
   #trace-panel table { width: 100%; border-collapse: collapse; font-size: 12px; }
@@ -156,9 +161,12 @@
     <div id="trace-panel"><table><thead><tr><th>时间</th><th>类型</th><th>名称</th><th>耗时</th><th>Tokens</th></tr></thead><tbody id="trace-body"></tbody></table></div>
     <div id="messages"></div>
     <div id="input-bar">
+      <div id="image-preview"><img id="preview-img" src=""><button class="remove-img" onclick="clearImage()">✕</button></div>
       <div id="input-wrap">
         <input type="file" id="file-input" style="display:none" accept=".txt,.md,.pdf">
+        <input type="file" id="image-input" style="display:none" accept="image/*">
         <button id="upload-btn" onclick="document.getElementById('file-input').click()">📎</button>
+        <button id="img-btn" onclick="document.getElementById('image-input').click()">🖼️</button>
         <textarea id="msg-input" placeholder="输入消息，Enter 发送，Shift+Enter 换行" rows="1"></textarea>
         <button id="send-btn">➤</button>
       </div>
@@ -184,6 +192,7 @@ let sending = false;
 let authToken = localStorage.getItem("agent_token") || "";
 let authMode = "login";
 let traceVisible = false;
+let currentImage = null;
 
 function getToken() { return localStorage.getItem("agent_token") || ""; }
 function authHeaders() {
@@ -257,6 +266,7 @@ function scrollBottom() { messagesEl.scrollTop = messagesEl.scrollHeight; }
 
 function addMsg(role, content, opts) {
   const markdown = !!(opts && opts.markdown);
+  const image = opts && opts.image;
   const wrap = document.createElement("div");
   wrap.className = "msg " + role;
   const label = document.createElement("div");
@@ -266,6 +276,12 @@ function addMsg(role, content, opts) {
   bubble.className = markdown ? "bubble markdown" : "bubble";
   if (markdown) bubble.innerHTML = renderMarkdown(content || "");
   else bubble.textContent = content || "";
+  if (image) {
+    const img = document.createElement("img");
+    img.src = image;
+    img.style.cssText = "max-width:100%;max-height:300px;border-radius:8px;margin-top:8px;";
+    bubble.appendChild(img);
+  }
   wrap.appendChild(label);
   wrap.appendChild(bubble);
   messagesEl.appendChild(wrap);
@@ -329,12 +345,15 @@ function removeTyping() {
 
 async function sendMessage() {
   const text = inputEl.value.trim();
-  if (!text || sending) return;
+  if ((!text && !currentImage) || sending) return;
   sending = true;
   sendBtn.disabled = true;
   inputEl.value = "";
   inputEl.style.height = "auto";
-  addMsg("user", text);
+  addMsg("user", text, { image: currentImage });
+  const imageData = currentImage;
+  currentImage = null;
+  document.getElementById("image-preview").style.display = "none";
   showTyping();
 
   let assistantBubble = null;
@@ -342,10 +361,12 @@ async function sendMessage() {
   let currentToolCards = {};
 
   try {
+    const body = { message: text || "请描述这张图片", thread_id: currentTid };
+    if (imageData) body.image = imageData;
     const resp = await fetch("/chat", {
       method: "POST",
       headers: authHeaders(),
-      body: JSON.stringify({ message: text, thread_id: currentTid }),
+      body: JSON.stringify(body),
     });
     if (!resp.ok) throw new Error("HTTP " + resp.status);
     const reader = resp.body.getReader();
@@ -482,7 +503,7 @@ async function selectSession(tid) {
     const data = await resp.json();
     (data.messages || []).forEach((m) => {
       if (m.role === "user") {
-        addMsg("user", m.content);
+        addMsg("user", m.content, { image: m.image });
       } else if (m.role === "assistant") {
         if (m.content) addMsg("assistant", m.content, { markdown: true });
       }
@@ -544,6 +565,25 @@ async function uploadFile(e) {
     addMsg("assistant", "⚠️ 上传失败: " + err.message);
   }
   e.target.value = "";
+}
+
+document.getElementById("image-input").addEventListener("change", function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    currentImage = ev.target.result;
+    document.getElementById("preview-img").src = currentImage;
+    document.getElementById("image-preview").style.display = "block";
+    inputEl.focus();
+  };
+  reader.readAsDataURL(file);
+  e.target.value = "";
+});
+
+function clearImage() {
+  currentImage = null;
+  document.getElementById("image-preview").style.display = "none";
 }
 
 async function loadDocuments() {

@@ -87,6 +87,37 @@ def test_chat_emits_events(monkeypatch):
     app.dependency_overrides.clear()
 
 
+def test_chat_with_image(monkeypatch):
+    captured = {}
+
+    class Chunk:
+        def __init__(self, content):
+            self.content = content
+
+    class FakeGraph:
+        def stream(self, inp, config, stream_mode=None):
+            msgs = inp.get("messages", [])
+            captured["message"] = msgs[0] if msgs else None
+            yield ("messages", (Chunk("I see an image"), {"langgraph_node": "model"}))
+
+    monkeypatch.setattr("agent.api.get_graph", lambda: FakeGraph())
+    app.dependency_overrides[get_current_user] = _fake_user
+    with TestClient(app) as c:
+        r = c.post("/chat", json={
+            "message": "describe this",
+            "thread_id": "img1",
+            "image": "data:image/png;base64,iVBORw0KGgo=",
+        })
+        assert r.status_code == 200
+        assert '"type": "token"' in r.text
+    msg = captured["message"]
+    assert isinstance(msg.content, list)
+    assert msg.content[0]["type"] == "text"
+    assert msg.content[1]["type"] == "image_url"
+    assert msg.content[1]["image_url"]["url"].startswith("data:image/png")
+    app.dependency_overrides.clear()
+
+
 def test_sessions(monkeypatch, tmp_path):
     db = tmp_path / "c.sqlite"
     con = sqlite3.connect(db)
