@@ -8,7 +8,12 @@ class Settings(BaseSettings):
     llm_api_key: SecretStr
     llm_base_url: str | None = None
     llm_temperature: float = 0.7
-    token_budget: int = 6000
+    token_budget: int = 500000
+    model_call_limit: int = 25
+    summary_trigger_messages: int = 30
+    summary_keep_messages: int = 10
+    jwt_secret: str = "change-me-in-production"
+    token_expire_hours: int = 168
     sqlite_path: str = "checkpoints.sqlite"
     api_host: str = "0.0.0.0"
     api_port: int = 8000

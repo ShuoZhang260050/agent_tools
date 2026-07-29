@@ -1,2 +1,2 @@
-from . import calculator, web_search  # noqa: F401
+from . import calculator, pdf_reader, web_search, weather, memory_tool  # noqa: F401
 from .registry import get_tools  # noqa: F401

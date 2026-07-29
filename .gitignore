@@ -27,8 +27,16 @@ env/
 # Databases / runtime data
 *.sqlite
 *.sqlite3
+*.sqlite-shm
+*.sqlite-wal
 *.db
 checkpoints.sqlite
+
+# Logs
+*.log
+
+# IDE
+*.iml
 
 # OS
 .DS_Store

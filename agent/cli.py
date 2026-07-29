@@ -1,4 +1,3 @@
-import asyncio
 import uuid
 
 import click
@@ -34,16 +33,12 @@ def chat(thread):
         msg = click.prompt("你", type=str, default="", show_default=False)
         if not msg or msg.strip() == "/exit":
             break
-
-        async def run():
-            async for ev in graph.astream_events(
-                {"messages": [HumanMessage(content=msg)]}, config, version="v2"
-            ):
-                if ev["event"] == "on_chat_model_stream" and ev["data"]["chunk"].content:
-                    click.echo(ev["data"]["chunk"].content, nl=False)
-            click.echo()
-
-        asyncio.run(run())
+        for chunk, meta in graph.stream(
+            {"messages": [HumanMessage(content=msg)]}, config, stream_mode="messages"
+        ):
+            if meta.get("langgraph_node") == "model" and chunk.content:
+                click.echo(chunk.content, nl=False)
+        click.echo()
 
 
 @main.command()

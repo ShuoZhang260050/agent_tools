@@ -5,12 +5,13 @@
 ## 特性
 
 - **ReAct 工具循环**：基于 `langchain.agents.create_agent`，LLM 自主决策调用工具 -> 观察结果 -> 再决策
+- **用户认证**：JWT 登录/注册，用户隔离的记忆与会话
 - **可插拔 LLM**：一条 OpenAI 兼容路径覆盖官方 OpenAI、智谱 GLM、通义千问、DeepSeek、本地 Ollama 等
 - **三种入口**：`import` 库 / `agent` CLI / FastAPI HTTP API（SSE 流式）
 - **SQLite 持久记忆**：按 `thread_id` 隔离，重启不丢上下文
-- **滑动窗口裁剪**：`wrap_model_call` 中间件在每次 LLM 调用前瞬时裁剪历史，防止撑爆上下文窗口
+- **上下文工程栈**：结构化系统提示词（XML+Markdown）+ 用户记忆注入 + 摘要压缩 + 状态栏 + 任务追踪 + 预算控制 + 提示注入防御
 - **装饰器工具注册**：加工具只需 `@register @tool`，无需改中央清单
-- **完整测试**：工具单测、ReAct 循环端到端测试（用 FakeToolModel，不调真实 API）、API/CLI 测试
+- **完整测试**：工具单测、ReAct 循环端到端测试、认证测试、记忆隔离测试、API/CLI 测试
 
 ## 安装
 
@@ -95,13 +96,14 @@ print(out["messages"][-1].content)
 前端：Library / CLI (click) / API (FastAPI SSE)
         │  都只调用 graph
         ▼
-核心：create_agent(model, tools, system_prompt, middleware=[trim], checkpointer)
+核心：create_agent(model, tools, [dynamic_prompt, todo, limit, summarization, trim, state_bar], checkpointer)
         │
    ┌────┴────────┬─────────────┬──────────────────┐
    ▼             ▼             ▼                  ▼
  LLM 工厂       工具注册表      记忆层              配置
  build_llm     get_tools()     SQLite checkpointer  Settings
- (OpenAI兼容)  (@register @tool) trim middleware     (.env)
+ (OpenAI兼容)  (@register @tool) + user_memory      (.env)
+                               trim + state_bar
 ```
 
 - `agent/config.py` — pydantic-settings 读取 `.env`，单一配置源
@@ -119,9 +121,11 @@ print(out["messages"][-1].content)
 | 新增工具 | `agent/tools/` 下加模块，`@register @tool` 装饰，在 `tools/__init__.py` import |
 | 换 LLM 后端 | `agent/llm/factory.py` 加一个 `llm_provider` 分支 |
 | 摘要压缩替代滑动窗口 | 替换 `agent/memory/trimming.py` 的 `make_trim_middleware`（或用库内置 `SummarizationMiddleware`） |
-| 跨会话长期记忆 | 接 LangGraph `Store`，在 prompt 注入 |
+| 自定义状态栏 | 改 `agent/memory/state_bar.py` 的 `_build_state_bar` |
+| 调整预算/摘要阈值 | 改 `agent/config.py` 的 `model_call_limit`/`summary_trigger_messages`/`summary_keep_messages` |
+| 跨会话用户记忆 | 已内置 `agent/memory/user_memory.py` + `save_memory` 工具，按 `user_id` 隔离 |
 | 自定义图/多智能体 | 把 `graph.build_graph` 内部换成手写 `StateGraph`，上层 CLI/API 不变 |
-| 动态 system prompt | 改用 `langchain.agents.middleware` 的 `dynamic_prompt` 中间件 |
+| 动态 system prompt | 改用 `langchain.agents.middleware` 的 `dynamic_prompt` 中间件（已在 `graph.py` 中用于注入用户记忆） |
 
 ## 测试
 

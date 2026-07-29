@@ -27,3 +27,24 @@ def test_react_loop_calls_tool(monkeypatch, tmp_path):
     types = [type(m).__name__ for m in out["messages"]]
     assert types == ["HumanMessage", "AIMessage", "ToolMessage", "AIMessage"]
     assert out["messages"][-1].content == "结果是 4"
+
+
+def test_sync_stream_messages_works(monkeypatch, tmp_path):
+    """回归：同步 SqliteSaver 不支持 async 方法；同步 stream(stream_mode='messages') 必须可用。"""
+    model = FakeToolModel([
+        AIMessage(content="", tool_calls=[{"name": "calculator",
+            "args": {"expression": "2+2"}, "id": "c1", "type": "tool_call"}]),
+        AIMessage(content="结果是 4"),
+    ])
+    monkeypatch.setattr("agent.graph.build_llm", lambda s: model)
+    g = build_graph(_settings(tmp_path))
+    model_text = []
+    for chunk, meta in g.stream(
+        {"messages": [{"role": "user", "content": "算 2+2"}]},
+        config={"configurable": {"thread_id": "stream-test"}},
+        stream_mode="messages",
+    ):
+        if meta.get("langgraph_node") == "model" and chunk.content:
+            model_text.append(chunk.content)
+    assert model_text
+    assert "4" in "".join(model_text)
