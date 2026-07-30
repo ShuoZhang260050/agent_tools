@@ -1,6 +1,6 @@
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from agent.config import Settings
-from agent.graph import build_graph
+from agent.graph import build_graph, _strip_image_parts
 from tests.conftest import FakeToolModel
 
 
@@ -48,3 +48,15 @@ def test_sync_stream_messages_works(monkeypatch, tmp_path):
             model_text.append(chunk.content)
     assert model_text
     assert "4" in "".join(model_text)
+
+
+def test_strip_image_parts_preserves_text_without_mutating_original():
+    msg = HumanMessage(content=[
+        {"type": "text", "text": "请分析这张图"},
+        {"type": "image_url", "image_url": {"url": "data:image/png;base64,abc"}},
+    ])
+    stripped = _strip_image_parts([msg])[0]
+    assert isinstance(stripped.content, str)
+    assert "请分析这张图" in stripped.content
+    assert "历史图片已省略" in stripped.content
+    assert msg.content[1]["type"] == "image_url"
