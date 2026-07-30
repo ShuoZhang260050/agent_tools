@@ -68,7 +68,7 @@ def test_make_state_bar_middleware_returns_middleware():
 # --- Task 3: 配置 ---
 
 def test_config_new_defaults():
-    s = Settings(llm_api_key="sk-test")
+    s = Settings(llm_api_key="sk-test", _env_file=None)
     assert s.model_call_limit == 25
     assert s.summary_trigger_messages == 30
     assert s.summary_keep_messages == 10

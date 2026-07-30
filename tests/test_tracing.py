@@ -20,18 +20,24 @@ def test_traces_table_created(tmp_path, monkeypatch):
 
 def test_llm_trace_recorded(tmp_path, monkeypatch):
     _setup(tmp_path, monkeypatch)
-    handler = TracingCallbackHandler()
+    handler = TracingCallbackHandler("test-model")
+
+    class FakeMsg:
+        text = "hello world"
+        usage_metadata = {"total_tokens": 42, "input_tokens": 10, "output_tokens": 32}
 
     class FakeGen:
         text = "hello world"
+        message = FakeMsg()
 
     class FakeResp:
         generations = [[FakeGen()]]
-        llm_output = {"token_usage": {"total_tokens": 42, "prompt_tokens": 10, "completion_tokens": 32}}
+        llm_output = None
 
-    config = {"configurable": {"thread_id": "t1", "user_id": 1}}
-    handler.on_llm_start({"name": "test-model"}, ["what is 2+2"], run_id="r1", config=config)
-    handler.on_llm_end(FakeResp(), run_id="r1", config=config)
+    handler.on_chat_model_start({"name": "ChatOpenAI"}, [[]], run_id="r1",
+                               metadata={"thread_id": "t1", "user_id": 1})
+    handler.on_llm_end(FakeResp(), run_id="r1",
+                       metadata={"thread_id": "t1", "user_id": 1})
 
     traces = get_traces(thread_id="t1")
     assert len(traces) == 1
@@ -44,11 +50,11 @@ def test_llm_trace_recorded(tmp_path, monkeypatch):
 
 def test_tool_trace_recorded(tmp_path, monkeypatch):
     _setup(tmp_path, monkeypatch)
-    handler = TracingCallbackHandler()
+    handler = TracingCallbackHandler("test-model")
 
-    config = {"configurable": {"thread_id": "t2", "user_id": 2}}
-    handler.on_tool_start({"name": "calculator"}, '{"expression": "1+1"}', run_id="r2", config=config)
-    handler.on_tool_end("2", run_id="r2", config=config)
+    config = {"metadata": {"thread_id": "t2", "user_id": 2}}
+    handler.on_tool_start({"name": "calculator"}, '{"expression": "1+1"}', run_id="r2", **config)
+    handler.on_tool_end("2", run_id="r2", **config)
 
     traces = get_traces(thread_id="t2")
     assert len(traces) == 1
@@ -60,11 +66,11 @@ def test_tool_trace_recorded(tmp_path, monkeypatch):
 
 def test_get_traces_all(tmp_path, monkeypatch):
     _setup(tmp_path, monkeypatch)
-    handler = TracingCallbackHandler()
+    handler = TracingCallbackHandler("test-model")
 
-    config = {"configurable": {"thread_id": "t1", "user_id": 1}}
-    handler.on_tool_start({"name": "web_search"}, '{"query": "test"}', run_id="r3", config=config)
-    handler.on_tool_end("result", run_id="r3", config=config)
+    config = {"metadata": {"thread_id": "t1", "user_id": 1}}
+    handler.on_tool_start({"name": "web_search"}, '{"query": "test"}', run_id="r3", **config)
+    handler.on_tool_end("result", run_id="r3", **config)
 
     all_traces = get_traces(limit=10)
     assert len(all_traces) >= 1

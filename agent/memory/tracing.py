@@ -41,29 +41,28 @@ def _truncate(text: str, max_len: int = 500) -> str:
 
 
 class TracingCallbackHandler(BaseCallbackHandler):
-    def __init__(self):
+    def __init__(self, model_name: str = ""):
+        self._model_name = model_name
         self._llm_starts: dict[str, dict] = {}
         self._tool_starts: dict[str, dict] = {}
 
     def _extract_context(self, kwargs: dict) -> tuple[str | None, int | None]:
-        config = kwargs.get("config", {}) or {}
-        configurable = config.get("configurable", {}) or {}
-        return configurable.get("thread_id"), configurable.get("user_id")
+        metadata = kwargs.get("metadata", {}) or {}
+        return metadata.get("thread_id"), metadata.get("user_id")
 
     def on_llm_start(self, serialized, prompts, *, run_id=None, **kwargs):
+        self._start_llm(serialized, prompts, run_id, kwargs)
+
+    def on_chat_model_start(self, serialized, messages, *, run_id=None, **kwargs):
+        self._start_llm(serialized, [], run_id, kwargs)
+
+    def _start_llm(self, serialized, prompts, run_id, kwargs):
         run_id = str(run_id or uuid.uuid4())
         thread_id, user_id = self._extract_context(kwargs)
-        model_name = ""
-        if isinstance(serialized, dict):
-            model_name = serialized.get("name", "")
-            if not model_name:
-                ids = serialized.get("id")
-                if isinstance(ids, list) and ids:
-                    model_name = ids[-1]
         self._llm_starts[run_id] = {
             "thread_id": thread_id,
             "user_id": user_id,
-            "name": model_name,
+            "name": self._model_name,
             "start_time": time.time(),
             "input": prompts[0] if prompts else "",
         }
@@ -77,15 +76,28 @@ class TracingCallbackHandler(BaseCallbackHandler):
         output_text = ""
         token_usage = {}
         try:
-            if hasattr(response, "llm_output") and response.llm_output:
-                token_usage = response.llm_output.get("token_usage", {})
             if hasattr(response, "generations") and response.generations:
                 gen = response.generations[0][0]
                 output_text = gen.text if hasattr(gen, "text") else str(gen)
+                msg = getattr(gen, "message", None)
+                if msg:
+                    usage = getattr(msg, "usage_metadata", None)
+                    if usage:
+                        token_usage = dict(usage)
+                    else:
+                        ak = getattr(msg, "additional_kwargs", None) or {}
+                        tu = ak.get("token_usage") or ak.get("usage")
+                        if tu:
+                            token_usage = tu
+            if not token_usage and hasattr(response, "llm_output") and response.llm_output:
+                lo = response.llm_output
+                tu = lo.get("token_usage") or lo.get("usage")
+                if tu:
+                    token_usage = tu
         except Exception:
             pass
         self._save_trace(
-            info["thread_id"], info["user_id"], "llm", info["name"],
+            info["thread_id"], info["user_id"], "llm", self._model_name,
             info["input"], output_text, duration_ms, token_usage,
         )
 

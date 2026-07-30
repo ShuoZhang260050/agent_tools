@@ -62,15 +62,28 @@ def _serialize_msg(m) -> dict:
         if isinstance(content, list):
             text = ""
             image_url = None
+            file_name = None
+            file_text = None
             for part in content:
                 if isinstance(part, dict):
                     if part.get("type") == "text":
-                        text = part.get("text", "")
+                        part_text = part.get("text", "")
+                        if part_text.startswith("[文件:"):
+                            end = part_text.find("]")
+                            if end > 0:
+                                file_name = part_text[len("[文件: "):end].strip()
+                                file_text = part_text[end + 1:].strip()
+                                continue
+                        text = (text + "\n" + part_text) if text else part_text
                     elif part.get("type") == "image_url":
                         image_url = part.get("image_url", {}).get("url")
-            d = {"role": "user", "content": text}
+            d = {"role": "user", "content": text.strip()}
             if image_url:
                 d["image"] = image_url
+            if file_name:
+                d["file"] = file_name
+                if file_text:
+                    d["file_text"] = file_text
             return d
         return {"role": "user", "content": str(content)}
     if cls == "AIMessage":
@@ -96,6 +109,8 @@ class ChatReq(BaseModel):
     thread_id: str | None = None
     image: str | None = None
     model: str | None = None
+    attachment_text: str | None = None
+    attachment_name: str | None = None
 
 
 class AuthReq(BaseModel):
@@ -208,7 +223,8 @@ async def chat(req: ChatReq, current: dict = Depends(get_current_user)):
     is_new = req.thread_id is None
     title = req.message[:30] if is_new else None
     add_user_thread(current["id"], tid, title=title)
-    config = {"configurable": {"thread_id": tid, "user_id": current["id"]}}
+    config = {"configurable": {"thread_id": tid, "user_id": current["id"]},
+              "metadata": {"thread_id": tid, "user_id": current["id"]}}
     callbacks = getattr(graph, "_tracing_callbacks", None)
     if callbacks:
         config["callbacks"] = list(callbacks)
@@ -226,7 +242,15 @@ async def chat(req: ChatReq, current: dict = Depends(get_current_user)):
                 content = []
                 if req.message:
                     content.append({"type": "text", "text": req.message})
+                if req.attachment_text:
+                    content.append({"type": "text", "text": f"[文件: {req.attachment_name or 'attachment'}]\n{req.attachment_text}"})
                 content.append({"type": "image_url", "image_url": {"url": req.image}})
+                msg = HumanMessage(content=content)
+            elif req.attachment_text:
+                content = []
+                if req.message:
+                    content.append({"type": "text", "text": req.message})
+                content.append({"type": "text", "text": f"[文件: {req.attachment_name or 'attachment'}]\n{req.attachment_text}"})
                 msg = HumanMessage(content=content)
             else:
                 msg = HumanMessage(content=req.message)
@@ -368,3 +392,37 @@ def get_traces_api(thread_id: str | None = None, limit: int = 50, current: dict 
     """获取调用追踪记录。"""
     from agent.memory.tracing import get_traces
     return {"traces": get_traces(thread_id=thread_id, limit=limit)}
+
+
+@app.post("/extract-text")
+async def extract_text(file: UploadFile = File(...), current: dict = Depends(get_current_user)):
+    """提取文件文本（用于附加到对话，不入知识库）。"""
+    filename = file.filename or "unknown.txt"
+    suffix = Path(filename).suffix.lower()
+    raw = await file.read()
+    if len(raw) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="文件超过 10MB，建议上传到知识库")
+    if suffix == ".pdf":
+        try:
+            import pymupdf
+        except ImportError:
+            raise HTTPException(status_code=400, detail="PDF 支持未启用：未安装 pymupdf")
+        try:
+            doc = pymupdf.open(stream=raw, filetype="pdf")
+            text = "\n".join(page.get_text("text") for page in doc)
+            doc.close()
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"PDF 解析失败: {e}")
+    elif suffix in (".txt", ".md", ".markdown", ".csv", ".json", ".log"):
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            text = raw.decode("gbk", errors="replace")
+    else:
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            text = raw.decode("gbk", errors="replace")
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="文件内容为空")
+    return {"text": text, "filename": filename}

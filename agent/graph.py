@@ -99,7 +99,7 @@ def build_graph_with_model(settings: Settings, model_name: str):
         init_traces_table()
     llm = build_llm_with_model(settings, model_name)
     checkpointer = _get_checkpointer(settings)
-    callbacks = [TracingCallbackHandler()] if settings.enable_tracing else []
+    callbacks = [TracingCallbackHandler(model_name)] if settings.enable_tracing else []
     middleware = [
         build_prompt,
         TodoListMiddleware(),

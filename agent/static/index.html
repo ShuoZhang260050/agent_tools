@@ -130,6 +130,11 @@
   .session-item .del-btn:hover { opacity: 1; }
   .session-item .rename-input { width: 100%; border: 1px solid var(--accent); border-radius: 4px; padding: 2px 6px; font-size: 13px; font-family: inherit; outline: none; }
   /* 文档区 */
+  .file-card { max-width: 80%; margin: 0 0 4px; padding: 10px 14px; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; cursor: pointer; transition: border-color 0.15s; }
+  .file-card:hover { border-color: var(--accent); }
+  .file-card .fc-name { font-size: 13px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-card .fc-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .msg.user .file-card { align-self: flex-end; }
   #doc-section { border-top: 1px solid var(--border); padding: 0 16px 8px; max-height: 200px; overflow-y: auto; }
   #doc-section h3 { font-size: 12px; color: var(--muted); margin: 10px 0 6px; font-weight: 600; }
   .doc-item { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px; border-radius: 6px; font-size: 12px; margin-bottom: 2px; }
@@ -137,6 +142,10 @@
   .doc-item .doc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
   .doc-item .doc-del { opacity: 0; background: none; border: none; color: #e53e3e; cursor: pointer; font-size: 12px; padding: 0 2px; flex-shrink: 0; }
   .doc-item:hover .doc-del { opacity: 0.7; }
+  #file-preview { max-width: 760px; margin: 0 auto 8px; display: none; position: relative; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; }
+  #file-preview .fp-name { font-size: 13px; font-weight: 600; margin-bottom: 2px; }
+  #file-preview .fp-snippet { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #file-preview .fp-remove { position: absolute; top: 4px; right: 8px; background: none; border: none; color: #e53e3e; cursor: pointer; font-size: 14px; }
   /* 附件按钮 */
   #attachment-picker { position: relative; flex-shrink: 0; }
   #attachment-btn { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 12px; width: 44px; height: 44px; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center; }
@@ -195,14 +204,17 @@
     <div id="messages"></div>
     <div id="input-bar">
       <div id="image-preview"><img id="preview-img" src=""><button class="remove-img" onclick="clearImage()">✕</button></div>
+      <div id="file-preview"><div class="fp-name"></div><div class="fp-snippet"></div><button class="fp-remove" onclick="clearFile()">✕</button></div>
       <div id="input-wrap">
-        <input type="file" id="file-input" style="display:none" accept=".txt,.md,.pdf">
+        <input type="file" id="file-input" style="display:none" accept=".txt,.md,.markdown,.pdf,.csv,.json,.log">
+        <input type="file" id="rag-input" style="display:none" accept=".txt,.md,.markdown,.pdf">
         <input type="file" id="image-input" style="display:none" accept="image/*">
         <div id="attachment-picker">
-          <button id="attachment-btn" type="button" title="上传附件">📎</button>
+          <button id="attachment-btn" type="button" title="上传附件">+</button>
           <div id="attachment-menu">
-            <button class="attachment-option" type="button" data-kind="image">🖼️ 上传图片</button>
-            <button class="attachment-option" type="button" data-kind="file">📄 上传文件</button>
+            <button class="attachment-option" type="button" data-kind="image">上传图片</button>
+            <button class="attachment-option" type="button" data-kind="attach">附加文件</button>
+            <button class="attachment-option" type="button" data-kind="rag">入知识库</button>
           </div>
         </div>
         <textarea id="msg-input" placeholder="输入消息，Enter 发送，Shift+Enter 换行" rows="1"></textarea>
@@ -242,6 +254,9 @@ let authToken = localStorage.getItem("agent_token") || "";
 let authMode = "login";
 let traceVisible = false;
 let currentImage = null;
+let currentFileText = null;
+let currentFileName = null;
+let currentFileSize = null;
 let currentModel = localStorage.getItem("agent_model") || "";
 let availableModels = [];
 
@@ -367,9 +382,21 @@ function logout() {
 
 function scrollBottom() { messagesEl.scrollTop = messagesEl.scrollHeight; }
 
+function formatFileSize(bytes) {
+  if (!bytes) return "";
+  if (bytes < 1024) return bytes + "B";
+  if (bytes < 1048576) return (bytes / 1024).toFixed(2) + "KB";
+  return (bytes / 1048576).toFixed(2) + "MB";
+}
+function fileTypeName(name) {
+  const parts = (name || "").split(".");
+  return parts.length > 1 ? parts.pop().toUpperCase() : "FILE";
+}
+
 function addMsg(role, content, opts) {
   const markdown = !!(opts && opts.markdown);
   const image = opts && opts.image;
+  const file = opts && opts.file;
   const wrap = document.createElement("div");
   wrap.className = "msg " + role;
   const label = document.createElement("div");
@@ -384,6 +411,27 @@ function addMsg(role, content, opts) {
     img.src = image;
     img.style.cssText = "max-width:100%;max-height:300px;border-radius:8px;margin-top:8px;";
     bubble.appendChild(img);
+  }
+  if (file) {
+    const fileEl = document.createElement("div");
+    fileEl.className = "file-card";
+    const sizeText = formatFileSize(file.size);
+    const typeText = fileTypeName(file.name);
+    fileEl.innerHTML =
+      '<div class="fc-name">' + escapeHtml(file.name) + '</div>' +
+      '<div class="fc-meta">' + typeText + (sizeText ? ' ' + sizeText : '') + '</div>';
+    if (file.text) {
+      fileEl.onclick = () => {
+        const html = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>'
+          + escapeHtml(file.name) + '</title><style>body{font-family:monospace;white-space:pre-wrap;padding:16px;font-size:14px;line-height:1.6;}</style></head><body>'
+          + escapeHtml(file.text) + '</body></html>';
+        const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        window.open(url, "_blank");
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+      };
+    }
+    wrap.appendChild(fileEl);
   }
   wrap.appendChild(label);
   wrap.appendChild(bubble);
@@ -448,15 +496,21 @@ function removeTyping() {
 
 async function sendMessage() {
   const text = inputEl.value.trim();
-  if ((!text && !currentImage) || sending) return;
+  if ((!text && !currentImage && !currentFileText) || sending) return;
   sending = true;
   sendBtn.disabled = true;
   inputEl.value = "";
   inputEl.style.height = "auto";
-  addMsg("user", text, { image: currentImage });
+  addMsg("user", text, { image: currentImage, file: currentFileText ? { name: currentFileName, text: currentFileText, size: currentFileSize } : null });
   const imageData = currentImage;
+  const fileText = currentFileText;
+  const fileName = currentFileName;
   currentImage = null;
+  currentFileText = null;
+  currentFileName = null;
+  currentFileSize = null;
   document.getElementById("image-preview").style.display = "none";
+  document.getElementById("file-preview").style.display = "none";
   showTyping();
 
   let assistantBubble = null;
@@ -464,9 +518,10 @@ async function sendMessage() {
   let currentToolCards = {};
 
   try {
-    const body = { message: text || "请描述这张图片", thread_id: currentTid };
+    const body = { message: text || "请分析附件内容", thread_id: currentTid };
     if (currentModel) body.model = currentModel;
     if (imageData) body.image = imageData;
+    if (fileText) { body.attachment_text = fileText; body.attachment_name = fileName; }
     const resp = await fetch("/chat", {
       method: "POST",
       headers: authHeaders(),
@@ -607,7 +662,7 @@ async function selectSession(tid) {
     const data = await resp.json();
     (data.messages || []).forEach((m) => {
       if (m.role === "user") {
-        addMsg("user", m.content, { image: m.image });
+        addMsg("user", m.content, { image: m.image, file: m.file ? { name: m.file, text: m.file_text, size: m.file_text ? new Blob([m.file_text]).size : null } : null });
       } else if (m.role === "assistant") {
         if (m.tool_calls && m.tool_calls.length) return;
         if (m.content) addMsg("assistant", m.content, { markdown: true });
@@ -660,7 +715,8 @@ inputEl.addEventListener("paste", function(e) {
   }
 });
 
-document.getElementById("file-input").addEventListener("change", uploadFile);
+document.getElementById("file-input").addEventListener("change", attachFile);
+document.getElementById("rag-input").addEventListener("change", uploadFile);
 attachmentButtonEl.addEventListener("click", (e) => {
   e.stopPropagation();
   modelPickerEl.classList.remove("open");
@@ -670,8 +726,10 @@ attachmentMenuEl.addEventListener("click", (e) => {
   const btn = e.target.closest(".attachment-option");
   if (!btn) return;
   attachmentPickerEl.classList.remove("open");
-  const inputId = btn.dataset.kind === "image" ? "image-input" : "file-input";
-  document.getElementById(inputId).click();
+  const kind = btn.dataset.kind;
+  if (kind === "image") document.getElementById("image-input").click();
+  else if (kind === "attach") document.getElementById("file-input").click();
+  else if (kind === "rag") document.getElementById("rag-input").click();
 });
 modelButtonEl.addEventListener("click", (e) => {
   e.stopPropagation();
@@ -688,7 +746,7 @@ async function uploadFile(e) {
   if (!file) return;
   const formData = new FormData();
   formData.append("file", file);
-  addMsg("user", "📎 上传文档: " + file.name);
+  addMsg("user", "入知识库: " + file.name);
   showTyping();
   try {
     const resp = await fetch("/documents", {
@@ -709,6 +767,74 @@ async function uploadFile(e) {
     addMsg("assistant", "⚠️ 上传失败: " + err.message);
   }
   e.target.value = "";
+}
+
+async function attachFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (file.size > 10 * 1024 * 1024) {
+    addMsg("assistant", "文件超过 10MB，建议使用「入知识库」。");
+    e.target.value = "";
+    return;
+  }
+  const isText = /\.(txt|md|markdown|csv|json|log)$/i.test(file.name);
+  if (isText) {
+    const reader = new FileReader();
+    reader.onload = function(ev) {
+      const buf = ev.target.result;
+      let text;
+      try {
+        text = new TextDecoder('utf-8', { fatal: true }).decode(buf);
+      } catch {
+        text = new TextDecoder('gbk').decode(buf);
+      }
+      currentFileText = text;
+      currentFileName = file.name;
+      currentFileSize = file.size;
+      showFilePreview(file.name, currentFileText);
+    };
+    reader.readAsArrayBuffer(file);
+  } else {
+    const formData = new FormData();
+    formData.append("file", file);
+    showTyping();
+    try {
+      const resp = await fetch("/extract-text", {
+        method: "POST",
+        headers: { "Authorization": "Bearer " + getToken() },
+        body: formData,
+      });
+      const data = await resp.json();
+      removeTyping();
+      if (!resp.ok) {
+        addMsg("assistant", "⚠️ 文件解析失败: " + (data.detail || "未知错误"));
+      } else {
+        currentFileText = data.text;
+        currentFileName = data.filename;
+        currentFileSize = new Blob([data.text]).size;
+        showFilePreview(data.filename, data.text);
+      }
+    } catch (err) {
+      removeTyping();
+      addMsg("assistant", "⚠️ 文件解析失败: " + err.message);
+    }
+  }
+  e.target.value = "";
+}
+
+function showFilePreview(name, text) {
+  const el = document.getElementById("file-preview");
+  el.querySelector(".fp-name").textContent = name;
+  el.querySelector(".fp-snippet").textContent = text.slice(0, 200);
+  el.style.display = "block";
+  inputEl.focus();
+}
+
+function clearFile() {
+  currentFileText = null;
+  currentFileName = null;
+  currentFileSize = null;
+  document.getElementById("file-preview").style.display = "none";
 }
 
 document.getElementById("image-input").addEventListener("change", function(e) {
@@ -742,7 +868,7 @@ async function loadDocuments() {
     data.documents.forEach((d) => {
       const item = document.createElement("div");
       item.className = "doc-item";
-      item.innerHTML = '<span class="doc-name">📄 ' + escapeHtml(d.filename) + '</span>' +
+      item.innerHTML = '<span class="doc-name">' + escapeHtml(d.filename) + '</span>' +
         '<button class="doc-del" title="删除">✕</button>';
       item.querySelector(".doc-del").onclick = () => deleteDocument(d.id, d.filename);
       docListEl.appendChild(item);
