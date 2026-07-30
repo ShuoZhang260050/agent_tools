@@ -161,15 +161,19 @@
   #ws-btn:hover { border-color: var(--accent); color: var(--text); }
   #ws-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 100; align-items: center; justify-content: center; }
   #ws-modal.open { display: flex; }
-  #ws-modal-box { background: var(--panel); border-radius: 12px; padding: 24px; width: 480px; max-width: 90vw; box-shadow: 0 20px 50px rgba(0,0,0,0.2); }
+  #ws-modal-box { background: var(--panel); border-radius: 12px; padding: 24px; width: 520px; max-width: 90vw; box-shadow: 0 20px 50px rgba(0,0,0,0.2); }
   #ws-modal-box h3 { font-size: 16px; margin-bottom: 12px; }
+  #ws-drive-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  #ws-drive-row label { font-size: 12px; color: var(--muted); }
+  #ws-drive { padding: 4px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; font-family: monospace; background: var(--bg); cursor: pointer; }
   #ws-input { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; font-family: monospace; box-sizing: border-box; }
   #ws-input:focus { border-color: var(--accent); outline: none; }
-  #ws-browse-list { max-height: 200px; overflow-y: auto; margin: 8px 0; border: 1px solid var(--border); border-radius: 8px; }
-  .ws-dir-item { padding: 6px 12px; font-size: 13px; cursor: pointer; border-radius: 4px; }
-  .ws-dir-item:hover { background: #f0f0f2; }
-  .ws-dir-up { color: var(--muted); font-style: italic; }
-  #ws-current { font-size: 11px; color: var(--muted); margin-top: 4px; word-break: break-all; }
+  #ws-breadcrumb { font-size: 11px; color: var(--muted); margin: 4px 0; word-break: break-all; }
+  #ws-browse-list { max-height: 240px; overflow-y: auto; margin: 8px 0; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); }
+  .ws-dir-item { padding: 8px 12px; font-size: 13px; cursor: pointer; border-radius: 4px; display: flex; align-items: center; gap: 6px; }
+  .ws-dir-item:hover { background: #e8e8ea; }
+  .ws-dir-up { color: var(--muted); }
+  .ws-actions { display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end; }
   .attachment-option {
     width: 100%; border: none; background: transparent; color: var(--text); border-radius: 8px;
     padding: 9px 10px; cursor: pointer; text-align: left; font: inherit; font-size: 13px;
@@ -241,19 +245,22 @@
    </div>
   </div>
 
-  <div id="ws-modal">
-    <div id="ws-modal-box">
-      <h3>设置工作空间</h3>
-      <input id="ws-input" placeholder="输入本地目录路径，如 D:\projects\myapp">
-      <div id="ws-current"></div>
-      <div id="ws-browse-list"></div>
-      <div style="display:flex;gap:8px;margin-top:12px;">
-        <button onclick="wsBrowse()" style="flex:1;padding:8px;border:1px solid var(--border);background:var(--bg);color:var(--text);border-radius:8px;cursor:pointer;font-size:13px;">浏览目录</button>
-        <button onclick="wsSave()" style="flex:1;padding:8px;border:none;background:var(--accent);color:#fff;border-radius:8px;cursor:pointer;font-size:13px;">确定</button>
-        <button onclick="closeWorkspacePicker()" style="padding:8px 16px;border:1px solid var(--border);background:var(--panel);color:var(--text);border-radius:8px;cursor:pointer;font-size:13px;">取消</button>
-      </div>
-    </div>
-  </div>
+   <div id="ws-modal">
+     <div id="ws-modal-box">
+       <h3>设置工作空间</h3>
+       <div id="ws-drive-row">
+         <label>盘符</label>
+         <select id="ws-drive" onchange="wsOnDriveChange()"></select>
+       </div>
+       <input id="ws-input" placeholder="选择或输入目录路径">
+       <div id="ws-breadcrumb"></div>
+       <div id="ws-browse-list"></div>
+       <div class="ws-actions">
+         <button onclick="closeWorkspacePicker()" style="padding:8px 16px;border:1px solid var(--border);background:var(--panel);color:var(--text);border-radius:8px;cursor:pointer;font-size:13px;">取消</button>
+         <button onclick="wsSave()" style="padding:8px 24px;border:none;background:var(--accent);color:#fff;border-radius:8px;cursor:pointer;font-size:13px;">确定</button>
+       </div>
+     </div>
+   </div>
   </div>
 
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -410,6 +417,8 @@ function logout() {
 }
 
 let wsBrowsePath = ".";
+let wsDrives = [];
+
 async function loadWorkspace() {
   try {
     const resp = await fetch("/workspace", { headers: authHeaders() });
@@ -422,54 +431,85 @@ async function loadWorkspace() {
     }
   } catch (e) {}
 }
-function openWorkspacePicker() {
+
+async function openWorkspacePicker() {
   $("#ws-modal").classList.add("open");
-  wsBrowsePath = ".";
   $("#ws-browse-list").innerHTML = "";
-  loadWorkspace();
+  $("#ws-breadcrumb").textContent = "";
+  $("#ws-input").value = "";
+  await loadWorkspace();
+  try {
+    const resp = await fetch("/workspace/drives", { headers: authHeaders() });
+    const data = await resp.json();
+    wsDrives = data.drives || [];
+    const sel = $("#ws-drive");
+    sel.innerHTML = "";
+    let selectedIdx = 0;
+    wsDrives.forEach((d, i) => {
+      const opt = document.createElement("option");
+      opt.value = d;
+      opt.textContent = d;
+      if (wsBrowsePath && wsBrowsePath.toUpperCase().startsWith(d.toUpperCase())) selectedIdx = i;
+      sel.appendChild(opt);
+    });
+    sel.selectedIndex = selectedIdx;
+    wsBrowse();
+  } catch (e) { $("#ws-breadcrumb").textContent = "加载盘符失败: " + e.message; }
 }
+
 function closeWorkspacePicker() {
   $("#ws-modal").classList.remove("open");
 }
+
+function wsOnDriveChange() {
+  wsBrowsePath = $("#ws-drive").value;
+  wsBrowse();
+}
+
 async function wsBrowse() {
   const inputVal = $("#ws-input").value.trim();
   const browsePath = inputVal || wsBrowsePath;
   try {
     const resp = await fetch("/workspace/browse?path=" + encodeURIComponent(browsePath), { headers: authHeaders() });
-    if (!resp.ok) { const e = await resp.json(); $("#ws-current").textContent = e.detail || "错误"; return; }
+    if (!resp.ok) { const e = await resp.json(); $("#ws-breadcrumb").textContent = e.detail || "错误"; return; }
     const data = await resp.json();
     wsBrowsePath = data.current;
     $("#ws-input").value = data.current;
-    $("#ws-current").textContent = "当前: " + data.current;
+    $("#ws-breadcrumb").textContent = data.current;
     const list = $("#ws-browse-list");
     list.innerHTML = "";
     if (data.parent) {
       const up = document.createElement("div");
       up.className = "ws-dir-item ws-dir-up";
-      up.textContent = "📁 ..";
+      up.innerHTML = "<span>📁</span> ..";
       up.onclick = () => { wsBrowsePath = data.parent; wsBrowse(); };
       list.appendChild(up);
+    }
+    if (data.dirs.length === 0 && !data.parent) {
+      list.innerHTML = '<div style="padding:12px;color:var(--muted);font-size:13px;">无子目录</div>';
     }
     for (const d of data.dirs) {
       const item = document.createElement("div");
       item.className = "ws-dir-item";
-      item.textContent = "📁 " + d.name;
-      item.onclick = () => { wsBrowsePath = d.path; wsBrowse(); };
+      item.innerHTML = "<span>📁</span> " + escapeHtml(d.name);
+      item.ondblclick = () => { wsBrowsePath = d.path; wsBrowse(); };
+      item.onclick = () => { $("#ws-input").value = d.path; };
       list.appendChild(item);
     }
-  } catch (e) { $("#ws-current").textContent = "错误: " + e.message; }
+  } catch (e) { $("#ws-breadcrumb").textContent = "错误: " + e.message; }
 }
+
 async function wsSave() {
   const path = $("#ws-input").value.trim();
-  if (!path) { $("#ws-current").textContent = "请输入路径"; return; }
+  if (!path) { $("#ws-breadcrumb").textContent = "请输入路径"; return; }
   try {
     const resp = await fetch("/workspace?path=" + encodeURIComponent(path), { method: "POST", headers: authHeaders() });
-    if (!resp.ok) { const e = await resp.json(); $("#ws-current").textContent = e.detail || "错误"; return; }
+    if (!resp.ok) { const e = await resp.json(); $("#ws-breadcrumb").textContent = e.detail || "错误"; return; }
     const data = await resp.json();
     $("#ws-name").textContent = data.workspace.split(/[\\\/]/).pop();
     $("#ws-name").parentElement.title = data.workspace;
     closeWorkspacePicker();
-  } catch (e) { $("#ws-current").textContent = "错误: " + e.message; }
+  } catch (e) { $("#ws-breadcrumb").textContent = "错误: " + e.message; }
 }
 
 function scrollBottom() { messagesEl.scrollTop = messagesEl.scrollHeight; }

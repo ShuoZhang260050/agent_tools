@@ -292,3 +292,14 @@ def test_workspace_browse(tmp_path):
         assert "subdir2" in names
         assert "file.txt" not in names
     app.dependency_overrides.clear()
+
+
+def test_workspace_drives():
+    app.dependency_overrides[get_current_user] = _fake_user
+    with TestClient(app) as c:
+        r = c.get("/workspace/drives")
+        assert r.status_code == 200
+        drives = r.json()["drives"]
+        assert isinstance(drives, list)
+        assert len(drives) > 0
+    app.dependency_overrides.clear()

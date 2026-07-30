@@ -462,3 +462,17 @@ def browse_workspace_api(path: str = ".", current: dict = Depends(get_current_us
     except PermissionError:
         raise HTTPException(status_code=400, detail="无权限访问该目录")
     return {"current": str(p), "parent": str(p.parent) if str(p.parent) != str(p) else None, "dirs": dirs[:100]}
+
+
+@app.get("/workspace/drives")
+def list_drives_api(current: dict = Depends(get_current_user)):
+    """列出系统可用的盘符。"""
+    import string
+    drives = []
+    for letter in string.ascii_uppercase:
+        drive = f"{letter}:\\"
+        if Path(drive).exists():
+            drives.append(drive)
+    if not drives:
+        drives = ["/"]
+    return {"drives": drives}
