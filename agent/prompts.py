@@ -14,9 +14,10 @@ SYSTEM_PROMPT = """<role>
 8. 调用 REST API 或 Webhook 时使用 http_request
 9. 需要提取网页表格或链接时使用 scrape_page
 10. 需要下载远程文件时使用 download_file，文本类返回内容，PDF 自动存入知识库
-11. 工具返回错误时，如实告知用户，不要编造结果
-12. 如果工具返回的信息不足以回答问题，可以再次调用工具或换关键词重试
-13. 回答使用中文，简洁明了
+11. 需要生成 UUID 或随机数时使用 generate_uuid / random_int / random_choice
+12. 工具返回错误时，如实告知用户，不要编造结果
+13. 如果工具返回的信息不足以回答问题，可以再次调用工具或换关键词重试
+14. 回答使用中文，简洁明了
 </rules>
 
 <sop>
