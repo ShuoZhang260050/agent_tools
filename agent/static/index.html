@@ -252,13 +252,13 @@
          <label>盘符</label>
          <select id="ws-drive" onchange="wsOnDriveChange()"></select>
        </div>
-       <input id="ws-input" placeholder="选择或输入目录路径">
+       <input id="ws-input" placeholder="选择或输入目录路径" onkeydown="if(event.key==='Enter'){wsBrowsePath=this.value.trim();wsBrowse();}">
        <div id="ws-breadcrumb"></div>
        <div id="ws-browse-list"></div>
-       <div class="ws-actions">
-         <button onclick="closeWorkspacePicker()" style="padding:8px 16px;border:1px solid var(--border);background:var(--panel);color:var(--text);border-radius:8px;cursor:pointer;font-size:13px;">取消</button>
-         <button onclick="wsSave()" style="padding:8px 24px;border:none;background:var(--accent);color:#fff;border-radius:8px;cursor:pointer;font-size:13px;">确定</button>
-       </div>
+        <div class="ws-actions">
+          <button onclick="closeWorkspacePicker()" style="padding:8px 16px;border:1px solid var(--border);background:var(--panel);color:var(--text);border-radius:8px;cursor:pointer;font-size:13px;">取消</button>
+          <button onclick="wsSave()" style="padding:8px 24px;border:none;background:var(--accent);color:#fff;border-radius:8px;cursor:pointer;font-size:13px;">确定</button>
+        </div>
      </div>
    </div>
   </div>
@@ -463,12 +463,12 @@ function closeWorkspacePicker() {
 
 function wsOnDriveChange() {
   wsBrowsePath = $("#ws-drive").value;
+  $("#ws-input").value = "";
   wsBrowse();
 }
 
 async function wsBrowse() {
-  const inputVal = $("#ws-input").value.trim();
-  const browsePath = inputVal || wsBrowsePath;
+  const browsePath = wsBrowsePath;
   try {
     const resp = await fetch("/workspace/browse?path=" + encodeURIComponent(browsePath), { headers: authHeaders() });
     if (!resp.ok) { const e = await resp.json(); $("#ws-breadcrumb").textContent = e.detail || "错误"; return; }
@@ -492,8 +492,7 @@ async function wsBrowse() {
       const item = document.createElement("div");
       item.className = "ws-dir-item";
       item.innerHTML = "<span>📁</span> " + escapeHtml(d.name);
-      item.ondblclick = () => { wsBrowsePath = d.path; wsBrowse(); };
-      item.onclick = () => { $("#ws-input").value = d.path; };
+      item.onclick = () => { wsBrowsePath = d.path; wsBrowse(); };
       list.appendChild(item);
     }
   } catch (e) { $("#ws-breadcrumb").textContent = "错误: " + e.message; }
