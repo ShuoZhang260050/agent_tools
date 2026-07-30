@@ -609,6 +609,7 @@ async function selectSession(tid) {
       if (m.role === "user") {
         addMsg("user", m.content, { image: m.image });
       } else if (m.role === "assistant") {
+        if (m.tool_calls && m.tool_calls.length) return;
         if (m.content) addMsg("assistant", m.content, { markdown: true });
       }
     });
