@@ -14,5 +14,6 @@ def build_llm_with_model(settings: Settings, model_name: str) -> BaseChatModel:
             api_key=settings.llm_api_key.get_secret_value(),
             base_url=settings.llm_base_url,
             temperature=settings.llm_temperature,
+            stream_usage=True,
         )
     raise ValueError(f"未知 LLM provider: {settings.llm_provider}")
