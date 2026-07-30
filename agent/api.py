@@ -31,6 +31,8 @@ from agent.memory.user_memory import (
     add_document,
     list_documents,
     delete_document,
+    get_workspace,
+    set_workspace,
 )
 
 app = FastAPI(title="Agent API")
@@ -426,3 +428,37 @@ async def extract_text(file: UploadFile = File(...), current: dict = Depends(get
     if not text.strip():
         raise HTTPException(status_code=400, detail="文件内容为空")
     return {"text": text, "filename": filename}
+
+
+@app.get("/workspace")
+def get_workspace_api(current: dict = Depends(get_current_user)):
+    """获取当前用户的工作空间路径。"""
+    return {"workspace": get_workspace(current["id"])}
+
+
+@app.post("/workspace")
+def set_workspace_api(path: str, current: dict = Depends(get_current_user)):
+    """设置当前用户的工作空间路径。"""
+    p = Path(path)
+    if not p.exists():
+        raise HTTPException(status_code=400, detail="路径不存在")
+    if not p.is_dir():
+        raise HTTPException(status_code=400, detail="路径不是目录")
+    saved = set_workspace(current["id"], str(p.resolve()))
+    return {"workspace": saved}
+
+
+@app.get("/workspace/browse")
+def browse_workspace_api(path: str = ".", current: dict = Depends(get_current_user)):
+    """列出目录内容，辅助用户选择工作空间。"""
+    p = Path(path).resolve()
+    if not p.is_dir():
+        raise HTTPException(status_code=400, detail="不是目录")
+    dirs = []
+    try:
+        for entry in sorted(p.iterdir(), key=lambda e: e.name.lower()):
+            if entry.is_dir() and not entry.name.startswith("."):
+                dirs.append({"name": entry.name, "path": str(entry)})
+    except PermissionError:
+        raise HTTPException(status_code=400, detail="无权限访问该目录")
+    return {"current": str(p), "parent": str(p.parent) if str(p.parent) != str(p) else None, "dirs": dirs[:100]}

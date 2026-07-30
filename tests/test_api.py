@@ -265,3 +265,30 @@ def test_delete_session(monkeypatch, tmp_path):
     assert con.execute("SELECT COUNT(*) FROM checkpoints WHERE thread_id='t-a'").fetchone()[0] == 0
     con.close()
     app.dependency_overrides.clear()
+
+
+def test_workspace_set_get(tmp_path):
+    app.dependency_overrides[get_current_user] = _fake_user
+    with TestClient(app) as c:
+        r = c.post("/workspace", params={"path": str(tmp_path)})
+        assert r.status_code == 200
+        assert r.json()["workspace"] == str(tmp_path.resolve())
+        r = c.get("/workspace")
+        assert r.status_code == 200
+        assert r.json()["workspace"] == str(tmp_path.resolve())
+    app.dependency_overrides.clear()
+
+
+def test_workspace_browse(tmp_path):
+    (tmp_path / "subdir1").mkdir()
+    (tmp_path / "subdir2").mkdir()
+    (tmp_path / "file.txt").write_text("hi")
+    app.dependency_overrides[get_current_user] = _fake_user
+    with TestClient(app) as c:
+        r = c.get("/workspace/browse", params={"path": str(tmp_path)})
+        assert r.status_code == 200
+        names = [d["name"] for d in r.json()["dirs"]]
+        assert "subdir1" in names
+        assert "subdir2" in names
+        assert "file.txt" not in names
+    app.dependency_overrides.clear()

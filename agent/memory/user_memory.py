@@ -206,3 +206,26 @@ def delete_document(user_id: int, doc_id: int):
     )
     con.commit()
     con.close()
+
+
+def get_workspace(user_id: int) -> str | None:
+    con = _get_db()
+    row = con.execute(
+        "SELECT value FROM user_memory WHERE user_id = ? AND key = 'workspace_root'",
+        (user_id,),
+    ).fetchone()
+    con.close()
+    return row[0] if row else None
+
+
+def set_workspace(user_id: int, path: str) -> str:
+    con = _get_db()
+    now = datetime.now().isoformat()
+    con.execute(
+        "INSERT INTO user_memory (user_id, key, value, updated_at) VALUES (?, ?, ?, ?) "
+        "ON CONFLICT(user_id, key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
+        (user_id, "workspace_root", path, now),
+    )
+    con.commit()
+    con.close()
+    return path
