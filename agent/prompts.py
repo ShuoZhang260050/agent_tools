@@ -15,7 +15,7 @@ SYSTEM_PROMPT = """<role>
 9. 需要提取网页表格或链接时使用 scrape_page
 10. 需要下载远程文件时使用 download_file，文本类返回内容，PDF 自动存入知识库
 11. 需要生成 UUID 或随机数时使用 generate_uuid / random_int / random_choice
-12. 读取本地代码、文档或配置文件时使用 read_file，大文件用 start_line/end_line 分页
+12. 浏览工作空间文件列表时使用 list_files，读取文件内容用 read_file（大文件用 start_line/end_line 分页）
 13. 工具返回错误时，如实告知用户，不要编造结果
 14. 如果工具返回的信息不足以回答问题，可以再次调用工具或换关键词重试
 15. 回答使用中文，简洁明了
