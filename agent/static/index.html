@@ -43,6 +43,29 @@
   /* 主区域 */
   #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   #header { padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--panel); font-weight: 600; font-size: 14px; }
+  #model-picker { position: relative; flex-shrink: 0; }
+  #model-button {
+    width: 118px; height: 44px; border: 1px solid var(--border); border-radius: 12px;
+    background: var(--panel); color: var(--text); padding: 0 10px; font: inherit;
+    cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  }
+  #model-button:hover, #model-button:focus { border-color: var(--accent); outline: none; }
+  #model-short { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 600; }
+  #model-caret { color: var(--muted); font-size: 11px; }
+  #model-menu {
+    display: none; position: absolute; right: 0; bottom: 52px; width: 300px; max-height: 260px;
+    overflow-y: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.14); padding: 6px; z-index: 10;
+  }
+  #model-picker.open #model-menu { display: block; }
+  .model-option {
+    width: 100%; border: none; background: transparent; color: var(--text); border-radius: 8px;
+    padding: 8px 10px; cursor: pointer; text-align: left; font: inherit;
+  }
+  .model-option:hover { background: #f0f0f2; }
+  .model-option.active { background: #e7f6f0; color: var(--accent); }
+  .model-option .model-name { font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
+  .model-option .model-meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
   #messages { flex: 1; overflow-y: auto; padding: 24px 20px; }
   .msg { max-width: 760px; margin: 0 auto 20px; display: flex; flex-direction: column; }
   .msg.user .bubble { background: var(--user-bg); color: var(--user-fg); align-self: flex-end; }
@@ -114,11 +137,21 @@
   .doc-item .doc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
   .doc-item .doc-del { opacity: 0; background: none; border: none; color: #e53e3e; cursor: pointer; font-size: 12px; padding: 0 2px; flex-shrink: 0; }
   .doc-item:hover .doc-del { opacity: 0.7; }
-  /* 上传按钮 */
-  #upload-btn { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 12px; width: 44px; height: 44px; cursor: pointer; font-size: 18px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
-  #upload-btn:hover { border-color: var(--accent); }
-  #img-btn { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 12px; width: 44px; height: 44px; cursor: pointer; font-size: 18px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
-  #img-btn:hover { border-color: var(--accent); }
+  /* 附件按钮 */
+  #attachment-picker { position: relative; flex-shrink: 0; }
+  #attachment-btn { background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 12px; width: 44px; height: 44px; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center; }
+  #attachment-btn:hover, #attachment-btn:focus { border-color: var(--accent); outline: none; }
+  #attachment-menu {
+    display: none; position: absolute; left: 0; bottom: 52px; width: 170px; background: var(--panel);
+    border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 12px 30px rgba(0,0,0,0.14);
+    padding: 6px; z-index: 10;
+  }
+  #attachment-picker.open #attachment-menu { display: block; }
+  .attachment-option {
+    width: 100%; border: none; background: transparent; color: var(--text); border-radius: 8px;
+    padding: 9px 10px; cursor: pointer; text-align: left; font: inherit; font-size: 13px;
+  }
+  .attachment-option:hover { background: #f0f0f2; }
   #image-preview { max-width: 760px; margin: 0 auto 8px; display: none; position: relative; }
   #image-preview img { max-width: 200px; max-height: 200px; border-radius: 8px; border: 1px solid var(--border); }
   #image-preview .remove-img { position: absolute; top: -6px; left: 194px; background: #e53e3e; color: #fff; border: none; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-size: 14px; line-height: 1; }
@@ -165,9 +198,18 @@
       <div id="input-wrap">
         <input type="file" id="file-input" style="display:none" accept=".txt,.md,.pdf">
         <input type="file" id="image-input" style="display:none" accept="image/*">
-        <button id="upload-btn" onclick="document.getElementById('file-input').click()">📎</button>
-        <button id="img-btn" onclick="document.getElementById('image-input').click()">🖼️</button>
+        <div id="attachment-picker">
+          <button id="attachment-btn" type="button" title="上传附件">📎</button>
+          <div id="attachment-menu">
+            <button class="attachment-option" type="button" data-kind="image">🖼️ 上传图片</button>
+            <button class="attachment-option" type="button" data-kind="file">📄 上传文件</button>
+          </div>
+        </div>
         <textarea id="msg-input" placeholder="输入消息，Enter 发送，Shift+Enter 换行" rows="1"></textarea>
+        <div id="model-picker">
+          <button id="model-button" type="button" title="选择模型"><span id="model-short">模型</span><span id="model-caret">▾</span></button>
+          <div id="model-menu"></div>
+        </div>
         <button id="send-btn">➤</button>
       </div>
     </div>
@@ -186,6 +228,13 @@ const curTidEl = $("#cur-tid");
 const docListEl = $("#doc-list");
 const tracePanelEl = $("#trace-panel");
 const traceBodyEl = $("#trace-body");
+const attachmentPickerEl = $("#attachment-picker");
+const attachmentButtonEl = $("#attachment-btn");
+const attachmentMenuEl = $("#attachment-menu");
+const modelPickerEl = $("#model-picker");
+const modelButtonEl = $("#model-button");
+const modelShortEl = $("#model-short");
+const modelMenuEl = $("#model-menu");
 
 let currentTid = null;
 let sending = false;
@@ -193,6 +242,8 @@ let authToken = localStorage.getItem("agent_token") || "";
 let authMode = "login";
 let traceVisible = false;
 let currentImage = null;
+let currentModel = localStorage.getItem("agent_model") || "";
+let availableModels = [];
 
 function getToken() { return localStorage.getItem("agent_token") || ""; }
 function authHeaders() {
@@ -209,10 +260,62 @@ function checkAuth() {
     newSession();
     loadSessions();
     loadDocuments();
+    loadModels();
   } else {
     document.getElementById("auth-view").style.display = "flex";
     document.getElementById("app").style.display = "none";
   }
+}
+
+async function loadModels() {
+  try {
+    const resp = await fetch("/models", { headers: authHeaders() });
+    const data = await resp.json();
+    const models = data.models || [];
+    availableModels = models;
+    if (models.length) {
+      const names = models.map((m) => m.name);
+      if (!currentModel || !names.includes(currentModel)) currentModel = names[0];
+      localStorage.setItem("agent_model", currentModel);
+    }
+    renderModelPicker();
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+function modelShortName(name) {
+  const lower = (name || "").toLowerCase();
+  if (lower.startsWith("glm-")) return "GLM " + name.slice(4);
+  if (lower.includes("doubao-seed-2.0-code")) return "DB 2.0 Code";
+  if (lower.includes("doubao-seed-2.0-pro")) return "DB 2.0 Pro";
+  if (lower.includes("doubao-seed-code")) return "DB Code";
+  if (lower.includes("deepseek")) return "DeepSeek";
+  if (lower.includes("kimi")) return "Kimi";
+  return name.length > 12 ? name.slice(0, 11) + "…" : name;
+}
+
+function renderModelPicker() {
+  const current = availableModels.find((m) => m.name === currentModel);
+  modelShortEl.textContent = current ? modelShortName(current.name) : "模型";
+  modelButtonEl.title = current ? current.name : "选择模型";
+  modelMenuEl.innerHTML = "";
+  availableModels.forEach((m) => {
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = "model-option" + (m.name === currentModel ? " active" : "");
+    option.innerHTML =
+      '<div class="model-name">' + escapeHtml(m.name) + '</div>' +
+      '<div class="model-meta">' + escapeHtml(modelShortName(m.name)) + (m.vision ? " · 支持图片" : " · 仅文本") + '</div>';
+    option.onclick = () => {
+      currentModel = m.name;
+      localStorage.setItem("agent_model", currentModel);
+      modelPickerEl.classList.remove("open");
+      renderModelPicker();
+      inputEl.focus();
+    };
+    modelMenuEl.appendChild(option);
+  });
 }
 
 function switchTab(mode) {
@@ -362,6 +465,7 @@ async function sendMessage() {
 
   try {
     const body = { message: text || "请描述这张图片", thread_id: currentTid };
+    if (currentModel) body.model = currentModel;
     if (imageData) body.image = imageData;
     const resp = await fetch("/chat", {
       method: "POST",
@@ -536,8 +640,47 @@ inputEl.addEventListener("input", () => {
   inputEl.style.height = "auto";
   inputEl.style.height = Math.min(inputEl.scrollHeight, 160) + "px";
 });
+inputEl.addEventListener("paste", function(e) {
+  const items = (e.clipboardData || {}).items || [];
+  for (const item of items) {
+    if (item.type && item.type.startsWith("image/")) {
+      e.preventDefault();
+      const file = item.getAsFile();
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(ev) {
+        currentImage = ev.target.result;
+        document.getElementById("preview-img").src = currentImage;
+        document.getElementById("image-preview").style.display = "block";
+      };
+      reader.readAsDataURL(file);
+      break;
+    }
+  }
+});
 
 document.getElementById("file-input").addEventListener("change", uploadFile);
+attachmentButtonEl.addEventListener("click", (e) => {
+  e.stopPropagation();
+  modelPickerEl.classList.remove("open");
+  attachmentPickerEl.classList.toggle("open");
+});
+attachmentMenuEl.addEventListener("click", (e) => {
+  const btn = e.target.closest(".attachment-option");
+  if (!btn) return;
+  attachmentPickerEl.classList.remove("open");
+  const inputId = btn.dataset.kind === "image" ? "image-input" : "file-input";
+  document.getElementById(inputId).click();
+});
+modelButtonEl.addEventListener("click", (e) => {
+  e.stopPropagation();
+  attachmentPickerEl.classList.remove("open");
+  modelPickerEl.classList.toggle("open");
+});
+document.addEventListener("click", (e) => {
+  if (!modelPickerEl.contains(e.target)) modelPickerEl.classList.remove("open");
+  if (!attachmentPickerEl.contains(e.target)) attachmentPickerEl.classList.remove("open");
+});
 
 async function uploadFile(e) {
   const file = e.target.files[0];

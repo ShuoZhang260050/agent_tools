@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from langchain_core.messages import HumanMessage
 
 from agent.config import Settings
-from agent.graph import build_graph
+from agent.graph import build_graph_with_model
 from agent.tools import get_tools
 from agent.auth import (
     create_access_token,
@@ -35,16 +35,17 @@ from agent.memory.user_memory import (
 
 app = FastAPI(title="Agent API")
 
-_graph = None
+_graphs: dict[str, object] = {}
 
 
-def get_graph():
-    """惰性构建并缓存 agent 图（单例）。"""
-    global _graph
-    if _graph is None:
+def get_graph(model: str | None = None):
+    """惰性构建并缓存 agent 图（按 model 缓存，共享 checkpointer）。"""
+    settings = Settings()
+    model = model or settings.llm_model
+    if model not in _graphs:
         init_tables()
-        _graph = build_graph()
-    return _graph
+        _graphs[model] = build_graph_with_model(settings, model)
+    return _graphs[model]
 
 
 _STATIC_DIR = Path(__file__).parent / "static"
@@ -94,6 +95,7 @@ class ChatReq(BaseModel):
     message: str
     thread_id: str | None = None
     image: str | None = None
+    model: str | None = None
 
 
 class AuthReq(BaseModel):
@@ -114,6 +116,16 @@ def health():
 @app.get("/tools")
 def tools():
     return [{"name": t.name, "description": t.description} for t in get_tools()]
+
+
+@app.get("/models")
+def models():
+    settings = Settings()
+    avail = [m.strip() for m in settings.available_models.split(",") if m.strip()]
+    if not avail:
+        avail = [settings.llm_model]
+    vision = {m.strip() for m in settings.vision_models.split(",") if m.strip()}
+    return {"models": [{"name": m, "vision": m in vision} for m in avail]}
 
 
 @app.post("/register")
@@ -191,7 +203,7 @@ def get_session(tid: str, current: dict = Depends(get_current_user)):
 
 @app.post("/chat")
 async def chat(req: ChatReq, current: dict = Depends(get_current_user)):
-    graph = get_graph()
+    graph = get_graph(req.model)
     tid = req.thread_id or str(uuid.uuid4())
     is_new = req.thread_id is None
     title = req.message[:30] if is_new else None
@@ -204,6 +216,13 @@ async def chat(req: ChatReq, current: dict = Depends(get_current_user)):
     def gen():
         try:
             if req.image:
+                settings = Settings()
+                vision = {m.strip() for m in settings.vision_models.split(",") if m.strip()}
+                model_name = req.model or settings.llm_model
+                if vision and model_name not in vision:
+                    yield _sse({"type": "error", "message": f"模型 {model_name} 不支持图片，请切换到视觉模型后重试"})
+                    yield _sse({"type": "done", "thread_id": tid})
+                    return
                 content = []
                 if req.message:
                     content.append({"type": "text", "text": req.message})

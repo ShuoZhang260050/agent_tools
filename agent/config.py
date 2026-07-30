@@ -24,5 +24,7 @@ class Settings(BaseSettings):
     rag_chunk_overlap: int = 50
     rag_top_k: int = 3
     enable_tracing: bool = True
+    available_models: str = ""
+    vision_models: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="", extra="ignore")

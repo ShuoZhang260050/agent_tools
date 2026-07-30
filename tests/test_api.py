@@ -21,6 +21,24 @@ def test_tools():
         assert "calculator" in names and "web_search" in names
 
 
+def test_models_endpoint(monkeypatch):
+    class FakeSettings:
+        llm_model = "base-model"
+        available_models = "base-model, vision-model"
+        vision_models = "vision-model"
+
+    monkeypatch.setattr("agent.api.Settings", lambda: FakeSettings())
+    with TestClient(app) as c:
+        r = c.get("/models")
+        assert r.status_code == 200
+        assert r.json() == {
+            "models": [
+                {"name": "base-model", "vision": False},
+                {"name": "vision-model", "vision": True},
+            ]
+        }
+
+
 def test_index_returns_html():
     with TestClient(app) as c:
         r = c.get("/")
@@ -74,7 +92,7 @@ def test_chat_emits_events(monkeypatch):
             yield ("updates", {"tools": {"messages": [ToolMessage("2", "c1", "calculator")]}})
             yield ("messages", (Chunk(" done"), {"langgraph_node": "model"}))
 
-    monkeypatch.setattr("agent.api.get_graph", lambda: FakeGraph())
+    monkeypatch.setattr("agent.api.get_graph", lambda model=None: FakeGraph())
     app.dependency_overrides[get_current_user] = _fake_user
     with TestClient(app) as c:
         r = c.post("/chat", json={"message": "hi", "thread_id": "t1"})
@@ -84,6 +102,29 @@ def test_chat_emits_events(monkeypatch):
         assert "tool_call" in body
         assert "tool_result" in body
         assert '"done"' in body
+    app.dependency_overrides.clear()
+
+
+def test_chat_uses_requested_model(monkeypatch):
+    captured = {}
+
+    class FakeGraph:
+        def stream(self, inp, config, stream_mode=None):
+            if False:
+                yield None
+
+    def fake_get_graph(model=None):
+        captured["model"] = model
+        return FakeGraph()
+
+    monkeypatch.setattr("agent.api.get_graph", fake_get_graph)
+    monkeypatch.setattr("agent.api.add_user_thread", lambda user_id, tid, title=None: None)
+    app.dependency_overrides[get_current_user] = _fake_user
+    with TestClient(app) as c:
+        r = c.post("/chat", json={"message": "hi", "thread_id": "t1", "model": "custom-model"})
+        assert r.status_code == 200
+        assert '"type": "done"' in r.text
+    assert captured["model"] == "custom-model"
     app.dependency_overrides.clear()
 
 
@@ -100,12 +141,13 @@ def test_chat_with_image(monkeypatch):
             captured["message"] = msgs[0] if msgs else None
             yield ("messages", (Chunk("I see an image"), {"langgraph_node": "model"}))
 
-    monkeypatch.setattr("agent.api.get_graph", lambda: FakeGraph())
+    monkeypatch.setattr("agent.api.get_graph", lambda model=None: FakeGraph())
     app.dependency_overrides[get_current_user] = _fake_user
     with TestClient(app) as c:
         r = c.post("/chat", json={
             "message": "describe this",
             "thread_id": "img1",
+            "model": "doubao-seed-2.0-code",
             "image": "data:image/png;base64,iVBORw0KGgo=",
         })
         assert r.status_code == 200

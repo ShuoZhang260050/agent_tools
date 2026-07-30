@@ -9,8 +9,8 @@ def _settings(tmp_path):
                     sqlite_path=str(tmp_path / "c.sqlite"))
 
 def test_build_graph_compiled(monkeypatch, tmp_path):
-    monkeypatch.setattr("agent.graph.build_llm",
-                        lambda s: FakeToolModel([AIMessage(content="hi")]))
+    monkeypatch.setattr("agent.graph.build_llm_with_model",
+                        lambda s, m: FakeToolModel([AIMessage(content="hi")]))
     g = build_graph(_settings(tmp_path))
     assert hasattr(g, "ainvoke") and hasattr(g, "astream_events")
 
@@ -20,7 +20,7 @@ def test_react_loop_calls_tool(monkeypatch, tmp_path):
             "args": {"expression": "2+2"}, "id": "c1", "type": "tool_call"}]),
         AIMessage(content="结果是 4"),
     ])
-    monkeypatch.setattr("agent.graph.build_llm", lambda s: model)
+    monkeypatch.setattr("agent.graph.build_llm_with_model", lambda s, m: model)
     g = build_graph(_settings(tmp_path))
     out = g.invoke({"messages": [{"role": "user", "content": "算 2+2"}]},
                    config={"configurable": {"thread_id": "react-test"}})
@@ -36,7 +36,7 @@ def test_sync_stream_messages_works(monkeypatch, tmp_path):
             "args": {"expression": "2+2"}, "id": "c1", "type": "tool_call"}]),
         AIMessage(content="结果是 4"),
     ])
-    monkeypatch.setattr("agent.graph.build_llm", lambda s: model)
+    monkeypatch.setattr("agent.graph.build_llm_with_model", lambda s, m: model)
     g = build_graph(_settings(tmp_path))
     model_text = []
     for chunk, meta in g.stream(
