@@ -1,3 +1,4 @@
+import io
 from pathlib import Path
 
 from langchain_core.runnables import RunnableConfig
@@ -11,7 +12,7 @@ _TEXT_EXTS = {
     ".json", ".yaml", ".yml", ".xml", ".csv", ".html", ".css", ".scss",
     ".sql", ".log", ".ini", ".cfg", ".toml", ".sh", ".bat", ".ps1",
     ".go", ".rs", ".java", ".c", ".cpp", ".h", ".hpp", ".rb", ".php",
-    ".vue", ".svelte",
+    ".vue", ".svelte", ".docx",
 }
 _BLOCKED_FILES = {".env", ".env.local", ".env.production"}
 
@@ -57,13 +58,21 @@ class ReadFileTool(BaseTool):
         if len(data) > _MAX_CHARS * 4:
             return f"文件过大（{len(data)} 字节），上限 {_MAX_CHARS * 4} 字节。"
 
-        try:
-            text = data.decode("utf-8")
-        except UnicodeDecodeError:
+        if suffix == ".docx":
             try:
-                text = data.decode("gbk")
+                import docx
+                doc = docx.Document(io.BytesIO(data))
+                text = "\n".join(p for p in (par.text for par in doc.paragraphs) if p.strip())
+            except Exception as e:
+                return f"Word 解析失败：{e}"
+        else:
+            try:
+                text = data.decode("utf-8")
             except UnicodeDecodeError:
-                return "文件编码无法识别（非 UTF-8/GBK）。"
+                try:
+                    text = data.decode("gbk")
+                except UnicodeDecodeError:
+                    return "文件编码无法识别（非 UTF-8/GBK）。"
 
         lines = text.splitlines()
         total = len(lines)

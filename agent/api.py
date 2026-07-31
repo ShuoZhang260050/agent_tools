@@ -1,3 +1,4 @@
+import io
 import json
 import sqlite3
 import traceback
@@ -359,8 +360,18 @@ async def upload_document(file: UploadFile = File(...), current: dict = Depends(
             raise HTTPException(status_code=400, detail=f"PDF 解析失败: {e}")
     elif suffix in (".txt", ".md", ".markdown"):
         text = raw.decode("utf-8", errors="replace")
+    elif suffix in (".doc", ".docx"):
+        try:
+            import docx
+        except ImportError:
+            raise HTTPException(status_code=400, detail="Word 支持未启用：未安装 python-docx")
+        try:
+            doc = docx.Document(io.BytesIO(raw))
+            text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Word 解析失败: {e}")
     else:
-        raise HTTPException(status_code=400, detail=f"不支持的文件类型: {suffix}（支持 .txt/.md/.pdf）")
+        raise HTTPException(status_code=400, detail=f"不支持的文件类型: {suffix}（支持 .txt/.md/.pdf/.docx）")
     if not text.strip():
         raise HTTPException(status_code=400, detail="文件内容为空")
 

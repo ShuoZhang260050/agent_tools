@@ -1,3 +1,4 @@
+import io
 import os
 from unittest.mock import patch
 from agent.tools.read_file import ReadFileTool
@@ -57,3 +58,15 @@ def test_read_no_workspace(tmp_path):
         tool = ReadFileTool()
         out = tool._run("test.py", config={"configurable": {"user_id": 1}})
         assert "未设置工作空间" in out
+
+
+def test_read_docx(tmp_path):
+    from docx import Document
+    doc = Document()
+    doc.add_paragraph("Hello from docx")
+    doc.add_paragraph("Second line")
+    f = tmp_path / "test.docx"
+    doc.save(str(f))
+    out = _run_with_ws("test.docx", str(tmp_path))
+    assert "Hello from docx" in out
+    assert "Second line" in out
