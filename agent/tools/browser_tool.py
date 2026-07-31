@@ -1,6 +1,7 @@
-import base64
 import queue
 import threading
+import uuid as _uuid
+from pathlib import Path
 from urllib.parse import urlparse
 
 from langchain_core.runnables import RunnableConfig
@@ -59,6 +60,7 @@ def _browser_call(fn):
 def _do_open(url):
     global _page
     page = _browser.new_page()
+    page.set_viewport_size({"width": 1280, "height": 800})
     page.goto(url, timeout=_TIMEOUT * 1000)
     page.wait_for_load_state("networkidle", timeout=_TIMEOUT * 1000)
     _page = page
@@ -66,9 +68,13 @@ def _do_open(url):
 
 
 def _do_screenshot():
+    from agent.config import Settings
     png = _page.screenshot()
-    b64 = base64.b64encode(png).decode()
-    return f'<external_content source="browser_screenshot">\n[截图已生成，{len(png)} bytes]\ndata:image/png;base64,{b64}\n</external_content>'
+    filename = f"screenshot_{_uuid.uuid4().hex[:8]}.png"
+    save_dir = Path(Settings().sqlite_path).parent / "screenshots"
+    save_dir.mkdir(exist_ok=True)
+    (save_dir / filename).write_bytes(png)
+    return f'<external_content source="browser_screenshot">截图已保存: /screenshots/{filename}</external_content>'
 
 
 def _do_click(selector):

@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse, Response
 from pydantic import BaseModel
 
 from langchain_core.messages import HumanMessage
@@ -487,3 +487,13 @@ def list_drives_api(current: dict = Depends(get_current_user)):
     if not drives:
         drives = ["/"]
     return {"drives": drives}
+
+
+@app.get("/screenshots/{filename}")
+def get_screenshot(filename: str):
+    """提供浏览器截图文件。"""
+    from pathlib import Path
+    path = Path(Settings().sqlite_path).parent / "screenshots" / filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="截图不存在")
+    return Response(content=path.read_bytes(), media_type="image/png")

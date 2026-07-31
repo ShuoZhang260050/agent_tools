@@ -608,7 +608,11 @@ if (typeof marked !== "undefined" && marked.use) { marked.use({ breaks: true, gf
 function renderMarkdown(text) {
   var fallback = escapeHtml(text || "").replace(/\n/g, "<br>");
   if (typeof marked === "undefined" || typeof DOMPurify === "undefined") return fallback;
-  try { return DOMPurify.sanitize(marked.parse(text || "")); }
+  try {
+    var html = DOMPurify.sanitize(marked.parse(text || ""));
+    html = html.replace(/\/screenshots\/screenshot_[a-f0-9]+\.png/g, '<img src="$&" style="max-width:100%;border-radius:8px;margin-top:8px;" alt="截图">');
+    return html;
+  }
   catch (e) { return fallback; }
 }
 
@@ -694,7 +698,16 @@ async function sendMessage() {
             status.className = "tc-status done";
             const resEl = document.createElement("div");
             resEl.className = "tc-result";
-            resEl.textContent = "结果: " + ev.content;
+            var shotMatch = typeof ev.content === "string" ? ev.content.match(/\/screenshots\/screenshot_[a-f0-9]+\.png/) : null;
+            if (shotMatch) {
+              var imgEl = document.createElement("img");
+              imgEl.src = shotMatch[0];
+              imgEl.style.cssText = "max-width:100%;border-radius:8px;margin-top:8px;";
+              imgEl.alt = "截图";
+              resEl.appendChild(imgEl);
+            } else {
+              resEl.textContent = "结果: " + ev.content;
+            }
             card.appendChild(resEl);
           }
           scrollBottom();
