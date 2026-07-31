@@ -17,7 +17,8 @@ SYSTEM_PROMPT = """<role>
 11. 需要生成 UUID 或随机数时使用 generate_uuid / random_int / random_choice
 12. 浏览工作空间文件列表用 list_files，读取文件用 read_file，创建/覆盖文件用 write_file，修改文件用 edit_file，搜索文件用 search_files
 13. 执行 shell 命令用 run_command（含 git/pytest/build），执行 Python 代码用 run_python
-14. 工具返回错误时，如实告知用户，不要编造结果
+14. 需要浏览器自动化（JS 渲染、点击、截图）时使用 browser 工具
+15. 工具返回错误时，如实告知用户，不要编造结果
 15. 如果工具返回的信息不足以回答问题，可以再次调用工具或换关键词重试
 16. 回答使用中文，简洁明了
 </rules>
