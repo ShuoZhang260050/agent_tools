@@ -2,10 +2,10 @@ from unittest.mock import patch
 from agent.tools.run_python import RunPythonTool
 
 
-def _run_with_ws(code, ws_path):
+def _run_with_ws(code, ws_path, **kwargs):
     with patch("agent.memory.user_memory.get_workspace", return_value=ws_path):
         tool = RunPythonTool()
-        return tool._run(code, config={"configurable": {"user_id": 1}})
+        return tool._run(code, config={"configurable": {"user_id": 1}}, **kwargs)
 
 
 def test_run_python_print(tmp_path):
@@ -26,4 +26,16 @@ def test_run_python_import(tmp_path):
 
 def test_run_python_error(tmp_path):
     out = _run_with_ws('x = 1 / 0', str(tmp_path))
-    assert "出错" in out or "Error" in out
+    assert "Error" in out or "出错" in out
+
+
+def test_run_python_timeout(tmp_path):
+    out = _run_with_ws('while True:\n    pass', str(tmp_path), timeout=2)
+    assert "超时" in out
+
+
+def test_run_python_stderr(tmp_path):
+    out = _run_with_ws('print("ok")\nraise ValueError("boom")', str(tmp_path))
+    assert "Traceback" in out
+    assert "ValueError" in out
+    assert "ok" in out

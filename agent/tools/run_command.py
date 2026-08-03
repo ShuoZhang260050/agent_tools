@@ -3,20 +3,20 @@ import subprocess
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
 
+from agent.config import Settings
 from .registry import register
 
 _MAX_OUTPUT = 20000
-_DEFAULT_TIMEOUT = 30
 
 
 class RunCommandTool(BaseTool):
     name: str = "run_command"
     description: str = (
         "在工作空间中执行 shell 命令（如 git log、pytest、npm run build 等）。"
-        "参数 command: 命令字符串；timeout: 超时秒数（默认 30）。"
+        "参数 command: 命令字符串；timeout: 超时秒数（默认从配置读取）。"
     )
 
-    def _run(self, command: str, timeout: int = _DEFAULT_TIMEOUT,
+    def _run(self, command: str, timeout: int = None,
              config: RunnableConfig = None) -> str:
         from agent.memory.user_memory import get_workspace
 
@@ -27,6 +27,9 @@ class RunCommandTool(BaseTool):
         ws = get_workspace(user_id)
         if not ws:
             return "未设置工作空间，请先在页面右上角设置工作空间路径。"
+
+        if timeout is None:
+            timeout = Settings().run_command_timeout
 
         try:
             result = subprocess.run(

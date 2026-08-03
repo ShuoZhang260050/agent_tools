@@ -26,5 +26,7 @@ class Settings(BaseSettings):
     enable_tracing: bool = True
     available_models: str = ""
     vision_models: str = ""
+    run_python_timeout: int = 120
+    run_command_timeout: int = 300
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="", extra="ignore")
