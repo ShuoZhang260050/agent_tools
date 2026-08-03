@@ -21,11 +21,11 @@ class ReadFileTool(BaseTool):
     name: str = "read_file"
     description: str = (
         "读取本地文件内容（代码、文档、配置）。大文件请分行读取。"
-        "参数 file_path: 相对于工作空间的路径或绝对路径；"
+        "参数 path: 相对于工作空间的路径或绝对路径；"
         "start_line: 起始行号（默认1）；end_line: 结束行号（0=读到末尾）。"
     )
 
-    def _run(self, file_path: str, start_line: int = 1, end_line: int = 0,
+    def _run(self, path: str, start_line: int = 1, end_line: int = 0,
              config: RunnableConfig = None) -> str:
         from agent.memory.user_memory import get_workspace
 
@@ -38,23 +38,23 @@ class ReadFileTool(BaseTool):
             return "未设置工作空间，请先在页面右上角设置工作空间路径。"
 
         root = Path(ws).resolve()
-        raw_path = Path(file_path)
-        path = raw_path.resolve() if raw_path.is_absolute() else (root / file_path).resolve()
+        raw_path = Path(path)
+        resolved = raw_path.resolve() if raw_path.is_absolute() else (root / path).resolve()
 
-        if not str(path).startswith(str(root)):
+        if not str(resolved).startswith(str(root)):
             return "拒绝访问：路径超出工作空间范围。"
-        if not path.exists():
-            return f"文件不存在：{file_path}"
-        if not path.is_file():
-            return f"不是文件：{file_path}"
-        if path.name in _BLOCKED_FILES:
-            return f"拒绝访问敏感文件：{path.name}"
+        if not resolved.exists():
+            return f"文件不存在：{path}"
+        if not resolved.is_file():
+            return f"不是文件：{path}"
+        if resolved.name in _BLOCKED_FILES:
+            return f"拒绝访问敏感文件：{resolved.name}"
 
-        suffix = path.suffix.lower()
+        suffix = resolved.suffix.lower()
         if suffix not in _TEXT_EXTS:
             return f"不支持的文件类型：{suffix}。支持文本类文件（py/js/ts/md/json/yaml等）。"
 
-        data = path.read_bytes()
+        data = resolved.read_bytes()
         if len(data) > _MAX_CHARS * 4:
             return f"文件过大（{len(data)} 字节），上限 {_MAX_CHARS * 4} 字节。"
 
@@ -90,7 +90,7 @@ class ReadFileTool(BaseTool):
             footer += f"，继续读取请用 start_line={nxt}"
         footer += "]"
 
-        return f'<external_content source="read_file" path="{file_path}">\n{result}\n\n{footer}\n</external_content>'
+        return f'<external_content source="read_file" path="{path}">\n{result}\n\n{footer}\n</external_content>'
 
 
 read_file = ReadFileTool()

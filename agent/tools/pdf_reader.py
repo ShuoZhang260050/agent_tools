@@ -13,7 +13,7 @@ except ImportError:  # 依赖缺失时给出友好提示而非崩溃
 @register
 @tool
 def read_pdf(
-    file_path: str,
+    path: str,
     page_start: int = 1,
     page_end: int = 0,
     max_chars: int = 1_000_000,
@@ -21,17 +21,18 @@ def read_pdf(
     """读取本地 PDF 文档的文本内容，用于分析、总结、检索 PDF。
     大文档请分页读取：先读前若干页，再依返回的「继续读取请用 page_start=N」提示读取后续内容。
     参数：
-      file_path: PDF 文件本地路径
+      path: PDF 文件本地路径
       page_start: 起始页码（从 1 开始，默认 1）
       page_end: 结束页码（含；0 或负数表示读到最后一页）
       max_chars: 返回的最大字符数（默认 1000000）；超出时按页边界停止并提示续读页码
     """
     if pymupdf is None:
         return "PDF 读取未启用：未安装 pymupdf，请运行 pip install pymupdf。"
-    path = Path(file_path)
-    if not path.exists():
+    file_path = path
+    p = Path(file_path)
+    if not p.exists():
         return f"文件不存在：{file_path}"
-    if path.suffix.lower() != ".pdf":
+    if p.suffix.lower() != ".pdf":
         return f"不是 PDF 文件：{file_path}"
 
     try:

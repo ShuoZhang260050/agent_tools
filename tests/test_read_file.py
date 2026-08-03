@@ -70,3 +70,14 @@ def test_read_docx(tmp_path):
     out = _run_with_ws("test.docx", str(tmp_path))
     assert "Hello from docx" in out
     assert "Second line" in out
+
+
+def test_read_file_accepts_path_keyword(tmp_path):
+    """回归：LLM 常用 path= 调用 read_file（与 write_file/edit_file 一致），
+    read_file 的参数必须叫 path 而非 file_path。"""
+    f = tmp_path / "kw.py"
+    f.write_text("print('ok')\n", encoding="utf-8")
+    with patch("agent.memory.user_memory.get_workspace", return_value=str(tmp_path)):
+        tool = ReadFileTool()
+        out = tool._run(path="kw.py", config={"configurable": {"user_id": 1}})
+    assert "ok" in out
