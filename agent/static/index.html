@@ -793,6 +793,7 @@ function handleAgentEvent(ev, state) {
         resEl.textContent = "结果: " + ev.content;
       }
       card.appendChild(resEl);
+      setCardCollapsed(card, true);
     }
     scrollBottom();
   } else if (ev.type === "approval_request") {
@@ -815,7 +816,7 @@ function handleAgentEvent(ev, state) {
     approvalPending = false;
     sendBtn.disabled = false;
     if (!state.assistantBubble) addMsg("assistant", "（无内容返回）");
-    Object.values(state.toolCards).forEach((card) => { card.style.display = "none"; });
+    Object.values(state.toolCards).forEach((card) => setCardCollapsed(card, true));
     loadSessions();
   }
 }
