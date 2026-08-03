@@ -303,3 +303,120 @@ def test_workspace_drives():
         assert isinstance(drives, list)
         assert len(drives) > 0
     app.dependency_overrides.clear()
+
+
+def test_permissions_endpoint():
+    with TestClient(app) as c:
+        r = c.get("/permissions")
+        assert r.status_code == 200
+        data = r.json()
+        values = [c["value"] for c in data["choices"]]
+        assert values == ["request_approval", "auto_approve", "full_access"]
+        assert data["default"] == "request_approval"
+
+
+def test_chat_permission_passed_to_config(monkeypatch):
+    captured = {}
+
+    class Chunk:
+        def __init__(self, content):
+            self.content = content
+
+    class AIMsg:
+        def __init__(self, tool_calls=None, content=""):
+            self.tool_calls = tool_calls
+            self.content = content
+
+    class FakeGraph:
+        def stream(self, inp, config, stream_mode=None):
+            captured["permission"] = config["configurable"].get("permission")
+            yield ("messages", (Chunk("ok"), {"langgraph_node": "model"}))
+
+    monkeypatch.setattr("agent.api.get_graph", lambda model=None: FakeGraph())
+    monkeypatch.setattr("agent.api.add_user_thread", lambda user_id, tid, title=None: None)
+    app.dependency_overrides[get_current_user] = _fake_user
+    with TestClient(app) as c:
+        r = c.post("/chat", json={"message": "hi", "thread_id": "t1", "permission": "auto_approve"})
+        assert r.status_code == 200
+        assert '"type": "done"' in r.text
+    assert captured["permission"] == "auto_approve"
+    app.dependency_overrides.clear()
+
+
+def test_chat_approval_request_and_resume(monkeypatch):
+    """请求审批模式下：/chat 发出 approval_request，/chat/resume 完成执行。"""
+    from langgraph.types import Command
+
+    class Chunk:
+        def __init__(self, content):
+            self.content = content
+
+    class AIMsg:
+        def __init__(self, tool_calls=None, content=""):
+            self.tool_calls = tool_calls
+            self.content = content
+
+    class ToolMessage:
+        def __init__(self, content, tool_call_id, name):
+            self.content = content
+            self.tool_call_id = tool_call_id
+            self.name = name
+
+    class Task:
+        def __init__(self, interrupts):
+            self.interrupts = interrupts
+
+    class Intr:
+        def __init__(self, value):
+            self.value = value
+
+    class State:
+        def __init__(self, tasks):
+            self.tasks = tasks
+
+    resumed = {"v": False}
+
+    class FakeGraph:
+        def stream(self, inp, config, stream_mode=None):
+            if isinstance(inp, Command):
+                yield ("updates", {"tools": {"messages": [
+                    ToolMessage("echo done", "c1", "run_command")]}})
+                yield ("messages", (Chunk(" 完成"), {"langgraph_node": "model"}))
+                resumed["v"] = True
+                return
+            yield ("updates", {"model": {"messages": [AIMsg(
+                tool_calls=[{"id": "c1", "name": "run_command",
+                             "args": {"command": "echo hi"}, "type": "tool_call"}])]}})
+
+        def get_state(self, config):
+            if resumed["v"]:
+                return State(tasks=[])
+            return State(tasks=[Task([Intr({
+                "tool": "run_command",
+                "args": {"command": "echo hi"},
+                "tool_call_id": "c1",
+            })])])
+
+    monkeypatch.setattr("agent.api.get_graph", lambda model=None: FakeGraph())
+    monkeypatch.setattr("agent.api.add_user_thread", lambda user_id, tid, title=None: None)
+    monkeypatch.setattr("agent.api.get_user_threads", lambda uid: ["t-approve"])
+    app.dependency_overrides[get_current_user] = _fake_user
+
+    with TestClient(app) as c:
+        r = c.post("/chat", json={"message": "run echo", "thread_id": "t-approve",
+                                   "permission": "request_approval"})
+        assert r.status_code == 200
+        body = r.text
+        assert "tool_call" in body
+        assert '"type": "approval_request"' in body
+        assert "run_command" in body
+        assert '"type": "done"' not in body
+
+        r2 = c.post("/chat/resume", json={"thread_id": "t-approve",
+                                           "decision": "approved",
+                                           "permission": "request_approval"})
+        assert r2.status_code == 200
+        assert '"type": "tool_result"' in r2.text
+        assert '"type": "done"' in r2.text
+    assert resumed["v"] is True
+    app.dependency_overrides.clear()

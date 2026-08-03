@@ -14,6 +14,7 @@ from agent.memory.trimming import make_trim_middleware
 from agent.memory.state_bar import make_state_bar_middleware
 from agent.memory.user_memory import load_memories, init_tables
 from agent.memory.tracing import TracingCallbackHandler, init_traces_table
+from agent.permissions import permission_gate, permission_prompt_section, DEFAULT_PERMISSION
 from agent.prompts import SYSTEM_PROMPT
 
 
@@ -21,8 +22,10 @@ from agent.prompts import SYSTEM_PROMPT
 def build_prompt(request):
     configurable = (request.runtime.context or {}).get("configurable", {}) if request.runtime else {}
     user_id = configurable.get("user_id")
+    permission = configurable.get("permission", DEFAULT_PERMISSION)
     memory = load_memories(user_id) if user_id else ""
-    return f"{SYSTEM_PROMPT}\n\n{memory}" if memory else SYSTEM_PROMPT
+    base = f"{SYSTEM_PROMPT}\n\n{memory}" if memory else SYSTEM_PROMPT
+    return base + permission_prompt_section(permission)
 
 
 _checkpointers: dict[str, tuple[object, object]] = {}
@@ -104,6 +107,7 @@ def build_graph_with_model(settings: Settings, model_name: str):
         build_prompt,
         TodoListMiddleware(),
         ModelCallLimitMiddleware(run_limit=settings.model_call_limit),
+        permission_gate,
     ]
     text_only_middleware = make_text_only_input_middleware(settings, model_name)
     if text_only_middleware is not None:

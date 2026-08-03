@@ -28,7 +28,7 @@ def chat(thread):
     tid = thread or str(uuid.uuid4())
     click.echo(f"会话 id: {tid}（输入 /exit 退出）")
     graph = build_graph()
-    config = {"configurable": {"thread_id": tid}}
+    config = {"configurable": {"thread_id": tid, "permission": "full_access"}}
     while True:
         msg = click.prompt("你", type=str, default="", show_default=False)
         if not msg or msg.strip() == "/exit":

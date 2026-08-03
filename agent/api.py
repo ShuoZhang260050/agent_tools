@@ -15,6 +15,7 @@ from langchain_core.messages import HumanMessage
 from agent.config import Settings
 from agent.graph import build_graph_with_model
 from agent.tools import get_tools
+from agent.permissions import DEFAULT_PERMISSION, find_pending_approval
 from agent.auth import (
     create_access_token,
     get_current_user,
@@ -114,6 +115,13 @@ class ChatReq(BaseModel):
     model: str | None = None
     attachment_text: str | None = None
     attachment_name: str | None = None
+    permission: str = DEFAULT_PERMISSION
+
+
+class ResumeReq(BaseModel):
+    thread_id: str
+    decision: str
+    permission: str = DEFAULT_PERMISSION
 
 
 class AuthReq(BaseModel):
@@ -144,6 +152,12 @@ def models():
         avail = [settings.llm_model]
     vision = {m.strip() for m in settings.vision_models.split(",") if m.strip()}
     return {"models": [{"name": m, "vision": m in vision} for m in avail]}
+
+
+@app.get("/permissions")
+def permissions():
+    from agent.permissions import PERMISSION_CHOICES
+    return {"choices": PERMISSION_CHOICES, "default": DEFAULT_PERMISSION}
 
 
 @app.post("/register")
@@ -219,6 +233,57 @@ def get_session(tid: str, current: dict = Depends(get_current_user)):
     return {"thread_id": tid, "messages": [_serialize_msg(m) for m in msgs]}
 
 
+def _stream_agent(graph, config, input_value, permission: str):
+    """共享的 agent 流式生成器：处理 messages/updates 事件，结束后检测审批中断。
+
+    input_value 可以是 {"messages": [...]} 或 langgraph Command(resume=...)。
+    """
+    try:
+        for mode, data in graph.stream(
+            input_value,
+            config,
+            stream_mode=["messages", "updates"],
+        ):
+            if mode == "messages":
+                chunk, meta = data
+                if meta.get("langgraph_node") == "model" and isinstance(chunk.content, str) and chunk.content:
+                    yield _sse({"type": "token", "content": chunk.content})
+            elif mode == "updates":
+                for node, delta in data.items():
+                    if not isinstance(delta, dict):
+                        continue
+                    for m in delta.get("messages", []):
+                        if node == "model" and getattr(m, "tool_calls", None):
+                            for tc in m.tool_calls:
+                                yield _sse({
+                                    "type": "tool_call",
+                                    "id": tc.get("id"),
+                                    "name": tc.get("name"),
+                                    "args": tc.get("args"),
+                                    "permission": permission,
+                                })
+                        elif node == "tools" and type(m).__name__ == "ToolMessage":
+                            yield _sse({
+                                "type": "tool_result",
+                                "tool_call_id": getattr(m, "tool_call_id", None),
+                                "name": getattr(m, "name", ""),
+                                "content": str(m.content),
+                            })
+        pending = find_pending_approval(graph, config)
+        if pending:
+            yield _sse({"type": "approval_request", "permission": permission, **pending})
+        else:
+            yield _sse({"type": "done", "thread_id": config["configurable"]["thread_id"]})
+    except Exception as e:
+        tb = traceback.format_exc()
+        try:
+            with open("chat_errors.log", "a", encoding="utf-8") as f:
+                f.write(f"[{datetime.now().isoformat()}] {tb}\n")
+        except Exception:
+            pass
+        yield _sse({"type": "error", "message": f"{type(e).__name__}: {e}"})
+
+
 @app.post("/chat")
 async def chat(req: ChatReq, current: dict = Depends(get_current_user)):
     graph = get_graph(req.model)
@@ -226,15 +291,21 @@ async def chat(req: ChatReq, current: dict = Depends(get_current_user)):
     is_new = req.thread_id is None
     title = req.message[:30] if is_new else None
     add_user_thread(current["id"], tid, title=title)
-    config = {"configurable": {"thread_id": tid, "user_id": current["id"]},
+    config = {"configurable": {"thread_id": tid, "user_id": current["id"],
+                               "permission": req.permission},
               "metadata": {"thread_id": tid, "user_id": current["id"]}}
     callbacks = getattr(graph, "_tracing_callbacks", None)
     if callbacks:
         config["callbacks"] = list(callbacks)
 
+    permission = req.permission
+    image_data = req.image
+    file_text = req.attachment_text
+    file_name = req.attachment_name
+
     def gen():
         try:
-            if req.image:
+            if image_data:
                 settings = Settings()
                 vision = {m.strip() for m in settings.vision_models.split(",") if m.strip()}
                 model_name = req.model or settings.llm_model
@@ -245,59 +316,47 @@ async def chat(req: ChatReq, current: dict = Depends(get_current_user)):
                 content = []
                 if req.message:
                     content.append({"type": "text", "text": req.message})
-                if req.attachment_text:
-                    content.append({"type": "text", "text": f"[文件: {req.attachment_name or 'attachment'}]\n{req.attachment_text}"})
-                content.append({"type": "image_url", "image_url": {"url": req.image}})
+                if file_text:
+                    content.append({"type": "text", "text": f"[文件: {file_name or 'attachment'}]\n{file_text}"})
+                content.append({"type": "image_url", "image_url": {"url": image_data}})
                 msg = HumanMessage(content=content)
-            elif req.attachment_text:
+            elif file_text:
                 content = []
                 if req.message:
                     content.append({"type": "text", "text": req.message})
-                content.append({"type": "text", "text": f"[文件: {req.attachment_name or 'attachment'}]\n{req.attachment_text}"})
+                content.append({"type": "text", "text": f"[文件: {file_name or 'attachment'}]\n{file_text}"})
                 msg = HumanMessage(content=content)
             else:
                 msg = HumanMessage(content=req.message)
-            for mode, data in graph.stream(
-                {"messages": [msg]},
-                config,
-                stream_mode=["messages", "updates"],
-            ):
-                if mode == "messages":
-                    chunk, meta = data
-                    if meta.get("langgraph_node") == "model" and isinstance(chunk.content, str) and chunk.content:
-                        yield _sse({"type": "token", "content": chunk.content})
-                elif mode == "updates":
-                    for node, delta in data.items():
-                        if not delta:
-                            continue
-                        for m in delta.get("messages", []):
-                            if node == "model" and getattr(m, "tool_calls", None):
-                                for tc in m.tool_calls:
-                                    yield _sse({
-                                        "type": "tool_call",
-                                        "id": tc.get("id"),
-                                        "name": tc.get("name"),
-                                        "args": tc.get("args"),
-                                    })
-                            elif node == "tools" and type(m).__name__ == "ToolMessage":
-                                yield _sse({
-                                    "type": "tool_result",
-                                    "tool_call_id": getattr(m, "tool_call_id", None),
-                                    "name": getattr(m, "name", ""),
-                                    "content": str(m.content),
-                                })
-            yield _sse({"type": "done", "thread_id": tid})
+            yield from _stream_agent(graph, config, {"messages": [msg]}, permission)
         except Exception as e:
-            tb = traceback.format_exc()
-            try:
-                with open("chat_errors.log", "a", encoding="utf-8") as f:
-                    f.write(f"[{datetime.now().isoformat()}] {tb}\n")
-            except Exception:
-                pass
             yield _sse({"type": "error", "message": f"{type(e).__name__}: {e}"})
 
     return StreamingResponse(
         gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.post("/chat/resume")
+def resume_chat(req: ResumeReq, current: dict = Depends(get_current_user)):
+    """用户对挂起的工具调用给出「确认/取消」后，恢复 agent 执行。"""
+    from langgraph.types import Command
+
+    user_threads = get_user_threads(current["id"])
+    if req.thread_id not in user_threads:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权访问此会话")
+    graph = get_graph()
+    config = {"configurable": {"thread_id": req.thread_id, "user_id": current["id"],
+                               "permission": req.permission},
+              "metadata": {"thread_id": req.thread_id, "user_id": current["id"]}}
+    callbacks = getattr(graph, "_tracing_callbacks", None)
+    if callbacks:
+        config["callbacks"] = list(callbacks)
+
+    return StreamingResponse(
+        _stream_agent(graph, config, Command(resume=req.decision), req.permission),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
