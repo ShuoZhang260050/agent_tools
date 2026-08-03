@@ -161,6 +161,8 @@
   }
   #send-btn:hover { background: var(--accent-hover); }
   #send-btn:disabled { background: #ccc; cursor: not-allowed; }
+  #send-btn.stop-mode { background: #e53e3e; }
+  #send-btn.stop-mode:hover { background: #c53030; }
   .typing-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--muted); margin: 0 2px; animation: blink 1.4s infinite both; }
   .typing-dot:nth-child(2) { animation-delay: 0.2s; }
   .typing-dot:nth-child(3) { animation-delay: 0.4s; }
@@ -333,6 +335,7 @@ const modelMenuEl = $("#model-menu");
 let currentTid = null;
 let sending = false;
 let approvalPending = false;
+let currentAbort = null;
 let authToken = localStorage.getItem("agent_token") || "";
 let authMode = "login";
 let traceVisible = false;
@@ -799,7 +802,7 @@ function handleAgentEvent(ev, state) {
   } else if (ev.type === "approval_request") {
     removeTyping();
     approvalPending = true;
-    sendBtn.disabled = true;
+    setSendingState(false);
     const card = ev.tool_call_id ? state.toolCards[ev.tool_call_id] : null;
     if (card) renderApprovalButtons(card, ev);
     else addMsg("assistant", "⏸ 请求审批：" + escapeHtml(ev.tool) + " " + escapeHtml(JSON.stringify(ev.args || {})));
@@ -807,14 +810,14 @@ function handleAgentEvent(ev, state) {
   } else if (ev.type === "error") {
     removeTyping();
     approvalPending = false;
-    sendBtn.disabled = false;
+    setSendingState(false);
     addMsg("assistant", "⚠️ " + (ev.message || "未知错误"));
   } else if (ev.type === "done") {
     currentTid = ev.thread_id;
     curTidEl.textContent = currentTid ? "· " + currentTid.slice(0, 8) : "";
     removeTyping();
     approvalPending = false;
-    sendBtn.disabled = false;
+    setSendingState(false);
     if (!state.assistantBubble) addMsg("assistant", "（无内容返回）");
     Object.values(state.toolCards).forEach((card) => setCardCollapsed(card, true));
     loadSessions();
@@ -841,11 +844,24 @@ async function readAgentStream(resp, state) {
   }
 }
 
+function setSendingState(isSending) {
+  sending = isSending;
+  if (isSending) {
+    sendBtn.textContent = "\u25A0";
+    sendBtn.classList.add("stop-mode");
+    sendBtn.disabled = false;
+  } else {
+    sendBtn.textContent = "\u27A4";
+    sendBtn.classList.remove("stop-mode");
+    sendBtn.disabled = approvalPending;
+  }
+}
+
 async function sendMessage() {
   const text = inputEl.value.trim();
   if ((!text && !currentImage && !currentFileText) || sending || approvalPending) return;
-  sending = true;
-  sendBtn.disabled = true;
+  setSendingState(true);
+  currentAbort = new AbortController();
   inputEl.value = "";
   inputEl.style.height = "auto";
   addMsg("user", text, { image: currentImage, file: currentFileText ? { name: currentFileName, text: currentFileText, size: currentFileSize } : null });
@@ -869,32 +885,41 @@ async function sendMessage() {
       method: "POST",
       headers: authHeaders(),
       body: JSON.stringify(body),
+      signal: currentAbort.signal,
     });
     if (!resp.ok) throw new Error("HTTP " + resp.status);
     await readAgentStream(resp, makeStreamState());
   } catch (e) {
     removeTyping();
-    addMsg("assistant", "⚠️ 请求失败: " + e.message);
+    if (e.name !== "AbortError") addMsg("assistant", "⚠️ 请求失败: " + e.message);
   } finally {
-    sending = false;
-    sendBtn.disabled = false;
+    currentAbort = null;
+    setSendingState(false);
     inputEl.focus();
   }
 }
 
 async function resumeChat(toolCallId, decision) {
   if (!currentTid) return;
+  approvalPending = false;
+  setSendingState(true);
+  currentAbort = new AbortController();
+  showTyping();
   try {
     const resp = await fetch("/chat/resume", {
       method: "POST",
       headers: authHeaders(),
       body: JSON.stringify({ thread_id: currentTid, decision, permission: currentPermission }),
+      signal: currentAbort.signal,
     });
     if (!resp.ok) throw new Error("HTTP " + resp.status);
     await readAgentStream(resp, makeStreamState());
   } catch (e) {
     removeTyping();
-    addMsg("assistant", "⚠️ 恢复失败: " + e.message);
+    if (e.name !== "AbortError") addMsg("assistant", "⚠️ 恢复失败: " + e.message);
+  } finally {
+    currentAbort = null;
+    setSendingState(false);
   }
 }
 
@@ -992,7 +1017,10 @@ function newSession() {
   inputEl.focus();
 }
 
-sendBtn.onclick = sendMessage;
+sendBtn.onclick = () => {
+  if (sending) { if (currentAbort) currentAbort.abort(); return; }
+  sendMessage();
+};
 $("#new-btn").onclick = newSession;
 inputEl.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) {
