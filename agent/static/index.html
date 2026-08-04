@@ -146,7 +146,24 @@
   .tool-card .tc-head { cursor: pointer; user-select: none; }
   .tool-card .tc-toggle { margin-left: auto; color: var(--muted); font-size: 11px; font-weight: 400; }
   .tool-card.collapsed .tc-args,
-  .tool-card.collapsed .tc-result { display: none; }
+  .tool-card.collapsed .tc-result,
+  .tool-card.collapsed .tc-expand { display: none; }
+  .tool-card .tc-result.tc-clamped {
+    display: -webkit-box;
+    -webkit-line-clamp: 10;
+    line-clamp: 10;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .tool-card .tc-expand {
+    margin-top: 4px;
+    color: var(--accent);
+    font-size: 12px;
+    cursor: pointer;
+    user-select: none;
+    width: fit-content;
+  }
+  .tool-card .tc-expand:hover { text-decoration: underline; }
   /* 输入区 */
   #input-bar { padding: 16px 20px; border-top: 1px solid var(--border); background: var(--panel); }
   #input-wrap { max-width: 760px; margin: 0 auto; display: flex; gap: 10px; align-items: flex-end; }
@@ -796,7 +813,26 @@ function handleAgentEvent(ev, state) {
         resEl.textContent = "结果: " + ev.content;
       }
       card.appendChild(resEl);
-      setCardCollapsed(card, true);
+      if (!shotMatch) {
+        var lines = String(ev.content).split("\n");
+        if (lines.length > 10) {
+          resEl.classList.add("tc-clamped");
+          var expandBtn = document.createElement("div");
+          expandBtn.className = "tc-expand";
+          expandBtn.textContent = "展开";
+          expandBtn.addEventListener("click", function (e) {
+            e.stopPropagation();
+            if (resEl.classList.contains("tc-clamped")) {
+              resEl.classList.remove("tc-clamped");
+              expandBtn.textContent = "收起";
+            } else {
+              resEl.classList.add("tc-clamped");
+              expandBtn.textContent = "展开";
+            }
+          });
+          card.appendChild(expandBtn);
+        }
+      }
     }
     scrollBottom();
   } else if (ev.type === "approval_request") {
@@ -819,7 +855,7 @@ function handleAgentEvent(ev, state) {
     approvalPending = false;
     setSendingState(false);
     if (!state.assistantBubble) addMsg("assistant", "（无内容返回）");
-    Object.values(state.toolCards).forEach((card) => setCardCollapsed(card, true));
+    Object.values(state.toolCards).forEach((card) => { card.style.display = "none"; });
     loadSessions();
   }
 }
