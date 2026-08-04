@@ -30,6 +30,7 @@ from agent.memory.user_memory import (
     add_user_thread,
     update_thread_title,
     delete_user_thread,
+    delete_thread_data,
     add_document,
     list_documents,
     delete_document,
@@ -369,13 +370,7 @@ def delete_session(tid: str, current: dict = Depends(get_current_user)):
     if tid not in user_threads:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="会话不存在")
     delete_user_thread(current["id"], tid)
-    settings = Settings()
-    con = sqlite3.connect(settings.sqlite_path, check_same_thread=False)
-    try:
-        con.execute("DELETE FROM checkpoints WHERE thread_id = ?", (tid,))
-        con.commit()
-    finally:
-        con.close()
+    delete_thread_data(Settings().sqlite_path, tid)
     return {"status": "deleted"}
 
 

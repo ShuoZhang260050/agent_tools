@@ -171,6 +171,47 @@ def delete_user_thread(user_id: int, thread_id: str):
     con.close()
 
 
+def delete_thread_data(sqlite_path: str, thread_id: str):
+    """删除会话的检查点、消息(writes)与追踪记录。
+
+    checkpoints/writes 由 LangGraph SqliteSaver 在启动时创建；
+    traces 仅在 enable_tracing 时由 init_traces_table() 创建，删除前需确认存在。
+    """
+    con = sqlite3.connect(sqlite_path, check_same_thread=False)
+    try:
+        con.execute("DELETE FROM checkpoints WHERE thread_id = ?", (thread_id,))
+        con.execute("DELETE FROM writes WHERE thread_id = ?", (thread_id,))
+        if con.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='traces'"
+        ).fetchone():
+            con.execute("DELETE FROM traces WHERE thread_id = ?", (thread_id,))
+        con.commit()
+    finally:
+        con.close()
+
+
+def cleanup_orphan_thread_data(sqlite_path: str) -> dict:
+    """清理 writes/traces 中 thread_id 不在 user_threads 的孤儿数据，返回各表删除行数。"""
+    con = sqlite3.connect(sqlite_path, check_same_thread=False)
+    try:
+        result = {}
+        for table in ("writes", "traces"):
+            if not con.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+            ).fetchone():
+                result[table] = 0
+                continue
+            cur = con.execute(
+                f"DELETE FROM {table} WHERE thread_id NOT IN "
+                f"(SELECT thread_id FROM user_threads)"
+            )
+            result[table] = cur.rowcount
+        con.commit()
+        return result
+    finally:
+        con.close()
+
+
 def add_document(user_id: int, filename: str, chunk_count: int) -> int:
     con = _get_db()
     now = datetime.now().isoformat()

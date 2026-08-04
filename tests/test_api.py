@@ -244,6 +244,10 @@ def test_delete_session(monkeypatch, tmp_path):
     con = sqlite3.connect(db)
     con.execute("CREATE TABLE checkpoints (thread_id TEXT, checkpoint_id TEXT)")
     con.execute("INSERT INTO checkpoints VALUES ('t-a', 'c1')")
+    con.execute("CREATE TABLE writes (thread_id TEXT, task_id TEXT)")
+    con.execute("INSERT INTO writes VALUES ('t-a', 'w1')")
+    con.execute("CREATE TABLE traces (id INTEGER PRIMARY KEY, thread_id TEXT)")
+    con.execute("INSERT INTO traces VALUES (1, 't-a')")
     con.commit()
     con.close()
 
@@ -263,8 +267,37 @@ def test_delete_session(monkeypatch, tmp_path):
     assert deleted == {"tid": "t-a"}
     con = sqlite3.connect(db)
     assert con.execute("SELECT COUNT(*) FROM checkpoints WHERE thread_id='t-a'").fetchone()[0] == 0
+    assert con.execute("SELECT COUNT(*) FROM writes WHERE thread_id='t-a'").fetchone()[0] == 0
+    assert con.execute("SELECT COUNT(*) FROM traces WHERE thread_id='t-a'").fetchone()[0] == 0
     con.close()
     app.dependency_overrides.clear()
+
+
+def test_cleanup_orphan_thread_data(tmp_path):
+    from agent.memory.user_memory import cleanup_orphan_thread_data
+
+    db = tmp_path / "orphans.sqlite"
+    con = sqlite3.connect(db)
+    con.execute("CREATE TABLE user_threads (user_id INTEGER, thread_id TEXT, PRIMARY KEY (user_id, thread_id))")
+    con.execute("INSERT INTO user_threads VALUES (1, 'keep')")
+    con.execute("CREATE TABLE writes (thread_id TEXT, task_id TEXT)")
+    con.execute("INSERT INTO writes VALUES ('keep', 'w1')")
+    con.execute("INSERT INTO writes VALUES ('orphan', 'w2')")
+    con.execute("CREATE TABLE traces (id INTEGER PRIMARY KEY, thread_id TEXT)")
+    con.execute("INSERT INTO traces VALUES (1, 'keep')")
+    con.execute("INSERT INTO traces VALUES (2, 'orphan')")
+    con.commit()
+    con.close()
+
+    result = cleanup_orphan_thread_data(str(db))
+
+    assert result == {"writes": 1, "traces": 1}
+    con = sqlite3.connect(db)
+    assert con.execute("SELECT COUNT(*) FROM writes WHERE thread_id='orphan'").fetchone()[0] == 0
+    assert con.execute("SELECT COUNT(*) FROM writes WHERE thread_id='keep'").fetchone()[0] == 1
+    assert con.execute("SELECT COUNT(*) FROM traces WHERE thread_id='orphan'").fetchone()[0] == 0
+    assert con.execute("SELECT COUNT(*) FROM traces WHERE thread_id='keep'").fetchone()[0] == 1
+    con.close()
 
 
 def test_workspace_set_get(tmp_path):

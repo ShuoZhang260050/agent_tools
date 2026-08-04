@@ -52,5 +52,15 @@ def serve(host, port):
     uvicorn.run("agent.api:app", host=host or s.api_host, port=port or s.api_port)
 
 
+@main.command(name="cleanup-orphans")
+def cleanup_orphans():
+    """清理 writes/traces 中已不存在于 user_threads 的孤儿数据。"""
+    from agent.memory.user_memory import cleanup_orphan_thread_data
+
+    result = cleanup_orphan_thread_data(Settings().sqlite_path)
+    for table, count in result.items():
+        click.echo(f"{table}: 已清理 {count} 行孤儿数据")
+
+
 if __name__ == "__main__":
     main()
