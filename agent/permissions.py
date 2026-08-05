@@ -87,15 +87,24 @@ def permission_gate(request, handler):
     return handler(request)
 
 
-def find_pending_approval(graph, config) -> dict | None:
-    """在图状态中查找待审批的中断。"""
+def find_all_pending_approvals(graph, config) -> list[dict]:
+    """查找所有待审批的中断列表（含 interrupt_id）。"""
     try:
         state = graph.get_state(config)
     except Exception:
-        return None
+        return []
+    results = []
     for task in getattr(state, "tasks", []) or []:
         for intr in getattr(task, "interrupts", []) or []:
             val = getattr(intr, "value", None)
             if isinstance(val, dict) and val.get("tool"):
-                return val
+                results.append({**val, "interrupt_id": getattr(intr, "id", None)})
+    return results
+
+
+def find_pending_approval(graph, config) -> dict | None:
+    """在图状态中查找第一个待审批的中断。"""
+    pendings = find_all_pending_approvals(graph, config)
+    if pendings:
+        return {k: v for k, v in pendings[0].items() if k != "interrupt_id"}
     return None

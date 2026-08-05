@@ -15,7 +15,7 @@ from langchain_core.messages import HumanMessage
 from agent.config import Settings
 from agent.graph import build_graph_with_model
 from agent.tools import get_tools
-from agent.permissions import DEFAULT_PERMISSION, find_pending_approval
+from agent.permissions import DEFAULT_PERMISSION, find_all_pending_approvals
 from agent.auth import (
     create_access_token,
     get_current_user,
@@ -295,9 +295,10 @@ def _stream_agent(graph, config, input_value, permission: str):
                                 "name": getattr(m, "name", ""),
                                 "content": str(m.content),
                             })
-        pending = find_pending_approval(graph, config)
-        if pending:
-            yield _sse({"type": "approval_request", "permission": permission, **pending})
+        pendings = find_all_pending_approvals(graph, config)
+        if pendings:
+            for p in pendings:
+                yield _sse({"type": "approval_request", "permission": permission, **p})
         else:
             tid = config["configurable"]["thread_id"]
             uid = config["configurable"].get("user_id")
@@ -400,8 +401,18 @@ def resume_chat(req: ResumeReq, current: dict = Depends(get_current_user)):
     if callbacks:
         config["callbacks"] = list(callbacks)
 
+    pendings = find_all_pending_approvals(graph, config)
+    if len(pendings) > 1:
+        resume_value = Command(resume={
+            p["interrupt_id"]: req.decision
+            for p in pendings
+            if p.get("interrupt_id")
+        })
+    else:
+        resume_value = Command(resume=req.decision)
+
     return StreamingResponse(
-        _stream_agent(graph, config, Command(resume=req.decision), req.permission),
+        _stream_agent(graph, config, resume_value, req.permission),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

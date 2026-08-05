@@ -914,10 +914,16 @@ function renderApprovalButtons(card, ev) {
     '<button class="tc-deny">取消</button>';
   card.appendChild(box);
   box.querySelector(".tc-approve").addEventListener("click", () => {
+    document.querySelectorAll(".tc-approval").forEach(a => {
+      if (a !== box) a.innerHTML = '<span class="tc-approval-msg">已批量处理</span>';
+    });
     box.innerHTML = '<span class="tc-approval-msg">已确认，执行中…</span>';
     resumeChat(ev.tool_call_id, "approved");
   });
   box.querySelector(".tc-deny").addEventListener("click", () => {
+    document.querySelectorAll(".tc-approval").forEach(a => {
+      if (a !== box) a.innerHTML = '<span class="tc-approval-msg">已批量处理</span>';
+    });
     box.innerHTML = '<span class="tc-approval-msg">已取消</span>';
     resumeChat(ev.tool_call_id, "denied");
   });

@@ -10,6 +10,7 @@ from agent.permissions import (
     AUTO_APPROVE,
     FULL_ACCESS,
     REQUEST_APPROVAL,
+    find_all_pending_approvals,
     find_pending_approval,
     is_sensitive,
     permission_prompt_section,
@@ -152,6 +153,65 @@ def test_request_approval_nonsensitive_tool_runs_freely(tmp_path, monkeypatch):
     out = graph.invoke({"messages": [HumanMessage(content="算2+2")]}, config=cfg)
     assert find_pending_approval(graph, cfg) is None
     assert any(type(m).__name__ == "ToolMessage" for m in out["messages"])
+
+
+def test_multiple_pending_interrupts_resume_all(tmp_path, monkeypatch):
+    """LLM 一次返回两个敏感工具调用时，两个 interrupt 同时挂起，resume 字典恢复全部。"""
+    settings = _settings(tmp_path, monkeypatch)
+    uid = _setup_user(tmp_path, monkeypatch)
+    model = FakeToolModel([
+        AIMessage(content="", tool_calls=[
+            {"name": "run_command",
+             "args": {"command": "echo a"}, "id": "m1", "type": "tool_call"},
+            {"name": "run_command",
+             "args": {"command": "echo b"}, "id": "m2", "type": "tool_call"},
+        ]),
+        AIMessage(content="both-done"),
+    ])
+    graph = _build(model, settings)
+    cfg = {"configurable": {"thread_id": "multi", "user_id": uid,
+                            "permission": REQUEST_APPROVAL}}
+
+    graph.invoke({"messages": [HumanMessage(content="go")]}, config=cfg)
+    pendings = find_all_pending_approvals(graph, cfg)
+    assert len(pendings) == 2
+    assert all(p.get("interrupt_id") for p in pendings)
+
+    resume_map = {p["interrupt_id"]: "approved" for p in pendings}
+    out2 = graph.invoke(Command(resume=resume_map), config=cfg)
+    tool_msgs = [m for m in out2["messages"] if type(m).__name__ == "ToolMessage"]
+    assert len(tool_msgs) == 2
+    assert out2["messages"][-1].content == "both-done"
+    assert find_all_pending_approvals(graph, cfg) == []
+
+
+def test_multiple_pending_interrupts_deny_all(tmp_path, monkeypatch):
+    """拒绝一个等于拒绝全部：所有 interrupt 用同一 decision 恢复。"""
+    settings = _settings(tmp_path, monkeypatch)
+    uid = _setup_user(tmp_path, monkeypatch)
+    model = FakeToolModel([
+        AIMessage(content="", tool_calls=[
+            {"name": "run_command",
+             "args": {"command": "echo a"}, "id": "d1", "type": "tool_call"},
+            {"name": "run_python",
+             "args": {"code": "print(1)"}, "id": "d2", "type": "tool_call"},
+        ]),
+        AIMessage(content="denied-done"),
+    ])
+    graph = _build(model, settings)
+    cfg = {"configurable": {"thread_id": "multi-deny", "user_id": uid,
+                            "permission": REQUEST_APPROVAL}}
+
+    graph.invoke({"messages": [HumanMessage(content="go")]}, config=cfg)
+    pendings = find_all_pending_approvals(graph, cfg)
+    assert len(pendings) == 2
+
+    resume_map = {p["interrupt_id"]: "denied" for p in pendings}
+    out2 = graph.invoke(Command(resume=resume_map), config=cfg)
+    tool_msgs = [m for m in out2["messages"] if type(m).__name__ == "ToolMessage"]
+    assert len(tool_msgs) == 2
+    assert all("取消" in m.content for m in tool_msgs)
+    assert out2["messages"][-1].content == "denied-done"
 
 
 def test_stream_agent_survives_interrupt_update(tmp_path, monkeypatch):
