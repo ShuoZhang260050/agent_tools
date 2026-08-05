@@ -68,7 +68,7 @@ class TestCreateShadow:
         assert "app.log" in result["skipped"]
 
     def test_200mb_limit(self, real_ws, shadow_dir, monkeypatch):
-        monkeypatch.setattr("agent.sandbox.shadow.MAX_SHADOW_BYTES", 10)
+        monkeypatch.setenv("SHADOW_MAX_BYTES", "10")
         with pytest.raises(ValueError, match="超过上限"):
             ShadowManager.create_shadow(real_ws, shadow_dir)
 

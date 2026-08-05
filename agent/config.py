@@ -29,4 +29,12 @@ class Settings(BaseSettings):
     run_python_timeout: int = 120
     run_command_timeout: int = 300
 
+    # Shadow Workspace 沙箱配置
+    # shadow 副本总大小上限（字节），超过则拒绝创建。默认 200MB
+    shadow_max_bytes: int = 200 * 1024 * 1024
+    # shadow 拷贝时跳过的目录名（逗号分隔），这些目录不会被复制到 shadow
+    shadow_skip_dirs: str = ".git,node_modules,.venv,__pycache__,.pytest_cache,dist,build,.superpowers"
+    # shadow 中验证命令的默认超时秒数
+    shadow_verify_timeout: int = 120
+
     model_config = SettingsConfigDict(env_file=".env", env_prefix="", extra="ignore")

@@ -12,6 +12,33 @@ SKIP_DIRS = frozenset({
     ".pytest_cache", "dist", "build", ".superpowers",
 })
 MAX_SHADOW_BYTES = 200 * 1024 * 1024
+VERIFY_TIMEOUT = 120
+
+
+def _get_skip_dirs() -> frozenset[str]:
+    try:
+        from agent.config import Settings
+        s = Settings()
+        parts = [d.strip() for d in s.shadow_skip_dirs.split(",") if d.strip()]
+        return frozenset(parts) if parts else SKIP_DIRS
+    except Exception:
+        return SKIP_DIRS
+
+
+def _get_max_bytes() -> int:
+    try:
+        from agent.config import Settings
+        return Settings().shadow_max_bytes
+    except Exception:
+        return MAX_SHADOW_BYTES
+
+
+def _get_verify_timeout() -> int:
+    try:
+        from agent.config import Settings
+        return Settings().shadow_verify_timeout
+    except Exception:
+        return VERIFY_TIMEOUT
 
 
 def _should_skip(name: str) -> bool:
@@ -85,13 +112,15 @@ class ShadowManager:
             raise ValueError(f"工作空间路径不是目录: {src}")
         dst.mkdir(parents=True, exist_ok=True)
 
+        skip_dirs = _get_skip_dirs()
+        max_bytes = _get_max_bytes()
         gitignore_patterns = _load_gitignore(src)
         total_bytes = 0
         file_count = 0
         skipped = []
 
         for dirpath, dirs, files in os.walk(src):
-            dirs[:] = [d for d in dirs if not _should_skip(d)]
+            dirs[:] = [d for d in dirs if d not in skip_dirs]
             rel_root = Path(dirpath).relative_to(src)
             for fname in files:
                 if fname.startswith("."):
@@ -106,9 +135,9 @@ class ShadowManager:
                     fsize = src_file.stat().st_size
                 except OSError:
                     continue
-                if total_bytes + fsize > MAX_SHADOW_BYTES:
+                if total_bytes + fsize > max_bytes:
                     raise ValueError(
-                        f"Shadow 大小超过上限 {MAX_SHADOW_BYTES // (1024 * 1024)}MB "
+                        f"Shadow 大小超过上限 {max_bytes // (1024 * 1024)}MB "
                         f"(已拷贝 {total_bytes // (1024 * 1024)}MB)"
                     )
 
@@ -128,11 +157,12 @@ class ShadowManager:
     def list_shadow_diff(shadow_path: str, real_path: str) -> dict:
         shadow = Path(shadow_path)
         real = Path(real_path)
+        skip_dirs = _get_skip_dirs()
         gitignore_patterns = _load_gitignore(real)
 
         shadow_files = {}
         for dirpath, dirs, files in os.walk(shadow):
-            dirs[:] = [d for d in dirs if not _should_skip(d)]
+            dirs[:] = [d for d in dirs if d not in skip_dirs]
             rel_root = Path(dirpath).relative_to(shadow)
             for f in files:
                 if f.startswith("."):
@@ -142,7 +172,7 @@ class ShadowManager:
 
         real_files = {}
         for dirpath, dirs, files in os.walk(real):
-            dirs[:] = [d for d in dirs if not _should_skip(d)]
+            dirs[:] = [d for d in dirs if d not in skip_dirs]
             rel_root = Path(dirpath).relative_to(real)
             for f in files:
                 if f.startswith("."):
@@ -241,7 +271,9 @@ def create_shadow_if_needed(user_id: int, thread_id: str) -> str | None:
     return shadow_path
 
 
-def verify_shadow(shadow_path: str, command: str, timeout: int = 120) -> dict:
+def verify_shadow(shadow_path: str, command: str, timeout: int = None) -> dict:
+    if timeout is None:
+        timeout = _get_verify_timeout()
     try:
         result = subprocess.run(
             command,
