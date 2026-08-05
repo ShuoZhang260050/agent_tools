@@ -44,11 +44,6 @@ def _get_verify_timeout() -> int:
         return VERIFY_TIMEOUT
 
 
-def _should_skip(name: str) -> bool:
-    """判断目录名是否在跳过集合中。"""
-    return name in SKIP_DIRS
-
-
 def _load_gitignore(root: Path) -> list[str]:
     """加载 .gitignore 文件中的 glob 模式列表。"""
     gi = root / ".gitignore"
@@ -80,23 +75,6 @@ def _matches_gitignore(rel_path: str, patterns: list[str]) -> bool:
         if "/" not in pat and fnmatch.fnmatch(name, pat):
             return True
     return False
-
-
-def _walk_files(root_path: str) -> dict[str, str]:
-    """遍历目录树，返回相对路径到绝对路径的映射。"""
-    result = {}
-    root = Path(root_path)
-    if not root.is_dir():
-        return result
-    for dirpath, dirs, files in os.walk(root):
-        dirs[:] = [d for d in dirs if not _should_skip(d)]
-        rel_root = Path(dirpath).relative_to(root)
-        for f in files:
-            if f.startswith("."):
-                continue
-            rel = str(rel_root / f) if str(rel_root) != "." else f
-            result[rel] = dirpath
-    return result
 
 
 def _file_hash(path: Path) -> str:
