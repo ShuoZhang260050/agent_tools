@@ -45,7 +45,9 @@ class ReadFileTool(BaseTool):
         raw_path = Path(path)
         resolved = raw_path.resolve() if raw_path.is_absolute() else (root / path).resolve()
 
-        if not str(resolved).startswith(str(root)):
+        try:
+            resolved.relative_to(root)
+        except ValueError:
             return "拒绝访问：路径超出工作空间范围。"
         if not resolved.exists():
             return f"文件不存在：{path}"

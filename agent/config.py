@@ -1,4 +1,4 @@
-from pydantic import SecretStr
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -15,6 +15,15 @@ class Settings(BaseSettings):
     summary_trigger_messages: int = 30
     summary_keep_messages: int = 10
     jwt_secret: str = "change-me-in-production"
+
+    @field_validator("jwt_secret")
+    @classmethod
+    def _validate_jwt_secret(cls, v: str) -> str:
+        """校验 JWT 密钥长度，HS256 安全下限 32 字符。"""
+        if len(v) < 32:
+            raise ValueError("JWT_SECRET 长度不足 32 字符，HS256 不安全。请在 .env 中设置更长的密钥。")
+        return v
+
     token_expire_hours: int = 168
     sqlite_path: str = "checkpoints.sqlite"
     api_host: str = "0.0.0.0"

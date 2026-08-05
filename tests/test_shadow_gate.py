@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 
+import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
 from agent import graph as g
@@ -127,3 +128,24 @@ class TestShadowGateMiddleware:
         assert (Path(shadow_path) / "cmd_output.txt").exists()
         assert not (tmp_path / "cmd_output.txt").exists()
         clear_active_shadow(uid, "sg5")
+
+    def test_shadow_failure_rejects_turn(self, tmp_path, monkeypatch):
+        """Shadow 创建失败时拒绝整个 turn，而非静默降级。"""
+        settings = _settings(tmp_path, monkeypatch)
+        uid = _setup_user(tmp_path, monkeypatch)
+        (tmp_path / "test.py").write_text("original", encoding="utf-8")
+
+        def _fail(uid, tid):
+            raise RuntimeError("mock shadow creation failure")
+        monkeypatch.setattr("agent.sandbox.shadow.create_shadow_if_needed", _fail)
+
+        model = FakeToolModel([
+            AIMessage(content="", tool_calls=[{"name": "write_file",
+                "args": {"path": "test.py", "content": "modified"}, "id": "sf1", "type": "tool_call"}]),
+        ])
+        graph = _build(model, settings)
+        cfg = {"configurable": {"thread_id": "sf1", "user_id": uid, "permission": FULL_ACCESS}}
+        with pytest.raises(RuntimeError, match="Shadow"):
+            graph.invoke({"messages": [HumanMessage(content="go")]}, config=cfg)
+        assert (tmp_path / "test.py").read_text() == "original"
+        clear_active_shadow(uid, "sf1")

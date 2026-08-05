@@ -23,7 +23,9 @@ def _resolve_path(file_path: str, user_id: int, config=None):
     root = Path(ws).resolve()
     raw_path = Path(file_path) if file_path and file_path != "." else Path(".")
     path = raw_path.resolve() if raw_path.is_absolute() else (root / file_path).resolve()
-    if not str(path).startswith(str(root)):
+    try:
+        path.relative_to(root)
+    except ValueError:
         return None, "拒绝访问：路径超出工作空间范围。"
     if path.name in _BLOCKED_FILES:
         return None, f"拒绝访问敏感文件：{path.name}"

@@ -53,6 +53,17 @@ def test_read_path_traversal(tmp_path):
     assert "超出工作空间" in out or "不存在" in out
 
 
+def test_read_sibling_prefix_traversal(tmp_path):
+    """兄弟目录前缀攻击：ws 是 ws_evil 的字符串前缀。"""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    evil = tmp_path / "ws_evil"
+    evil.mkdir()
+    (evil / "secret.py").write_text("SECRET=xxx", encoding="utf-8")
+    out = _run_with_ws("../ws_evil/secret.py", str(ws))
+    assert "超出工作空间" in out
+
+
 def test_read_no_workspace(tmp_path):
     with patch("agent.memory.user_memory.get_workspace", return_value=None):
         tool = ReadFileTool()

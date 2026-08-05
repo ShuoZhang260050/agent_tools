@@ -19,3 +19,17 @@ def test_settings_missing_api_key_raises(monkeypatch):
     monkeypatch.delenv("LLM_API_KEY", raising=False)
     with pytest.raises(Exception):
         Settings(_env_file=None)
+
+
+def test_settings_short_jwt_raises(monkeypatch):
+    """JWT 密钥短于 32 字符应报错。"""
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    with pytest.raises(Exception):
+        Settings(_env_file=None, llm_api_key="sk-test", jwt_secret="short")
+
+
+def test_settings_valid_jwt(monkeypatch):
+    """JWT 密钥 32+ 字符正常通过。"""
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    s = Settings(_env_file=None, llm_api_key="sk-test", jwt_secret="a" * 32)
+    assert len(s.jwt_secret) == 32

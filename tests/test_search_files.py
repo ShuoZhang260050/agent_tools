@@ -44,3 +44,13 @@ def test_search_no_match(tmp_path):
 def test_search_path_traversal(tmp_path):
     out = _run_with_ws("test", str(tmp_path), path="../../etc", search_type="all")
     assert "超出工作空间" in out or "不存在" in out
+
+
+def test_search_sibling_prefix_traversal(tmp_path):
+    """兄弟目录前缀攻击：ws 是 ws_evil 的字符串前缀。"""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    evil = tmp_path / "ws_evil"
+    evil.mkdir()
+    out = _run_with_ws("test", str(ws), path="../ws_evil", search_type="all")
+    assert "超出工作空间" in out

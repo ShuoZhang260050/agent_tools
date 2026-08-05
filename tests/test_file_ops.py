@@ -46,6 +46,19 @@ def test_write_path_traversal(tmp_path):
     assert "超出工作空间" in out
 
 
+def test_write_sibling_prefix_traversal(tmp_path):
+    """兄弟目录前缀攻击：ws 是 ws_evil 的字符串前缀，旧 startswith 检查可绕过。"""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    evil = tmp_path / "ws_evil"
+    evil.mkdir()
+    with patch("agent.memory.user_memory.get_workspace", return_value=str(ws)):
+        w = WriteFileTool()
+        out = w._run("../ws_evil/secret.txt", "evil", config={"configurable": {"user_id": 1}})
+    assert "超出工作空间" in out
+    assert not (evil / "secret.txt").exists()
+
+
 def test_edit_file_basic(tmp_path):
     f = tmp_path / "code.py"
     f.write_text("def foo():\n    return 1\n", encoding="utf-8")

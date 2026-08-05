@@ -1,6 +1,21 @@
+import os
+
+import pytest
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
+
+
+@pytest.fixture(autouse=True)
+def _set_test_jwt_secret():
+    """为所有测试注入足够长的 JWT_SECRET，避免 validator 报错。"""
+    old = os.environ.get("JWT_SECRET")
+    os.environ["JWT_SECRET"] = "test-jwt-secret-with-at-least-32-characters!!"
+    yield
+    if old is not None:
+        os.environ["JWT_SECRET"] = old
+    else:
+        os.environ.pop("JWT_SECRET", None)
 
 
 class FakeToolModel(BaseChatModel):

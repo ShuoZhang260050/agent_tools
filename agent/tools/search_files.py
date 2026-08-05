@@ -50,7 +50,9 @@ class SearchFilesTool(BaseTool):
         raw_path = Path(path) if path and path != "." else Path(".")
         target = raw_path.resolve() if raw_path.is_absolute() else (root / path).resolve()
 
-        if not str(target).startswith(str(root)):
+        try:
+            target.relative_to(root)
+        except ValueError:
             return "拒绝访问：路径超出工作空间范围。"
         if not target.is_dir():
             return f"不是目录：{path}"
