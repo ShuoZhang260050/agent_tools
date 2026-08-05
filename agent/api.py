@@ -37,6 +37,17 @@ from agent.memory.user_memory import (
     get_workspace,
     set_workspace,
 )
+from agent.sandbox.shadow import (
+    get_active_workspace,
+    clear_active_shadow,
+    ShadowManager,
+)
+from agent.sandbox.snapshot import (
+    init_snapshots_table,
+    save_snapshot,
+    restore_snapshot,
+    get_latest_snapshot_id,
+)
 
 app = FastAPI(title="Agent API")
 
@@ -274,7 +285,24 @@ def _stream_agent(graph, config, input_value, permission: str):
         if pending:
             yield _sse({"type": "approval_request", "permission": permission, **pending})
         else:
-            yield _sse({"type": "done", "thread_id": config["configurable"]["thread_id"]})
+            tid = config["configurable"]["thread_id"]
+            uid = config["configurable"].get("user_id")
+            shadow_path = get_active_workspace(uid, tid) if uid else None
+            if shadow_path:
+                real_ws = get_workspace(uid)
+                if real_ws:
+                    diff = ShadowManager.list_shadow_diff(shadow_path, real_ws)
+                    has_changes = bool(diff["added"] or diff["modified"] or diff["deleted"])
+                    yield _sse({
+                        "type": "done",
+                        "thread_id": tid,
+                        "pending_sync": has_changes,
+                        "diff": diff,
+                    })
+                else:
+                    yield _sse({"type": "done", "thread_id": tid})
+            else:
+                yield _sse({"type": "done", "thread_id": tid})
     except Exception as e:
         tb = traceback.format_exc()
         try:
@@ -541,6 +569,55 @@ def list_drives_api(current: dict = Depends(get_current_user)):
     if not drives:
         drives = ["/"]
     return {"drives": drives}
+
+
+@app.get("/workspace/diff")
+def get_workspace_diff_api(thread_id: str, current: dict = Depends(get_current_user)):
+    """获取当前 shadow 与 real workspace 的差异。"""
+    uid = current["id"]
+    shadow_path = get_active_workspace(uid, thread_id)
+    if not shadow_path:
+        return {"diff": {"added": [], "modified": [], "deleted": []}, "pending_sync": False}
+    real_ws = get_workspace(uid)
+    if not real_ws:
+        return {"diff": {"added": [], "modified": [], "deleted": []}, "pending_sync": False}
+    diff = ShadowManager.list_shadow_diff(shadow_path, real_ws)
+    has_changes = bool(diff["added"] or diff["modified"] or diff["deleted"])
+    return {"diff": diff, "pending_sync": has_changes}
+
+
+@app.post("/workspace/sync")
+def sync_workspace_api(thread_id: str, current: dict = Depends(get_current_user)):
+    """将 shadow 工作空间的变更同步到真实工作空间。同步前自动快照。"""
+    uid = current["id"]
+    shadow_path = get_active_workspace(uid, thread_id)
+    if not shadow_path:
+        raise HTTPException(status_code=400, detail="没有活跃的 shadow 工作空间")
+    real_ws = get_workspace(uid)
+    if not real_ws:
+        raise HTTPException(status_code=400, detail="未设置真实工作空间")
+
+    diff = ShadowManager.list_shadow_diff(shadow_path, real_ws)
+    if not (diff["added"] or diff["modified"] or diff["deleted"]):
+        clear_active_shadow(uid, thread_id)
+        return {"synced": 0, "message": "无变更需要同步"}
+
+    snapshot_id = save_snapshot(Settings().sqlite_path, uid, thread_id, real_ws, diff)
+    result = ShadowManager.apply_shadow_to_real(shadow_path, real_ws)
+    clear_active_shadow(uid, thread_id)
+    return {"synced": result["synced"], "bytes": result["bytes"], "snapshot_id": snapshot_id}
+
+
+@app.post("/workspace/revert")
+def revert_workspace_api(thread_id: str, current: dict = Depends(get_current_user)):
+    """从最新快照恢复真实工作空间。"""
+    uid = current["id"]
+    snapshot_id = get_latest_snapshot_id(Settings().sqlite_path, uid, thread_id)
+    if not snapshot_id:
+        raise HTTPException(status_code=404, detail="没有可恢复的快照")
+    result = restore_snapshot(Settings().sqlite_path, snapshot_id)
+    clear_active_shadow(uid, thread_id)
+    return result
 
 
 @app.get("/screenshots/{filename}")

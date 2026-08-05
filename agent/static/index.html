@@ -164,6 +164,32 @@
     width: fit-content;
   }
   .tool-card .tc-expand:hover { text-decoration: underline; }
+  /* Shadow sync panel */
+  .sync-panel {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 16px; max-width: 760px; margin: 0 auto;
+  }
+  .sync-header { font-size: 14px; margin-bottom: 8px; }
+  .sync-summary { display: flex; gap: 8px; margin-bottom: 10px; }
+  .sync-tag { font-size: 12px; padding: 2px 8px; border-radius: 4px; font-weight: 600; }
+  .sync-tag.sync-added { background: #d1fae5; color: #065f46; }
+  .sync-tag.sync-modified { background: #fef3c7; color: #92400e; }
+  .sync-tag.sync-deleted { background: #fee2e2; color: #991b1b; }
+  .sync-files { max-height: 240px; overflow-y: auto; margin-bottom: 10px; font-size: 12px; }
+  .sync-file { padding: 3px 6px; border-radius: 4px; font-family: monospace; }
+  .sync-file .sf-icon { font-weight: bold; margin-right: 4px; }
+  .sync-file.sync-added { color: #065f46; }
+  .sync-file.sync-modified { color: #92400e; }
+  .sync-file.sync-deleted { color: #991b1b; text-decoration: line-through; }
+  .sync-actions { display: flex; gap: 10px; align-items: center; }
+  .sync-btn { padding: 6px 14px; border-radius: 8px; font-size: 13px; cursor: pointer; border: 1px solid var(--border); }
+  .sync-btn.sync-apply { background: var(--accent); color: #fff; border: none; }
+  .sync-btn.sync-apply:hover { opacity: 0.9; }
+  .sync-btn.sync-revert { background: var(--panel); color: var(--text); }
+  .sync-btn.sync-revert:hover { border-color: #dc2626; color: #dc2626; }
+  .sync-msg { font-size: 13px; color: var(--muted); }
+  .sync-msg.sync-ok { color: #065f46; }
+  .sync-msg.sync-err { color: #dc2626; }
   /* 输入区 */
   #input-bar { padding: 16px 20px; border-top: 1px solid var(--border); background: var(--panel); }
   #input-wrap { max-width: 760px; margin: 0 auto; display: flex; gap: 10px; align-items: flex-end; }
@@ -352,6 +378,7 @@ const modelMenuEl = $("#model-menu");
 let currentTid = null;
 let sending = false;
 let approvalPending = false;
+let syncPending = false;
 let currentAbort = null;
 let authToken = localStorage.getItem("agent_token") || "";
 let authMode = "login";
@@ -720,6 +747,82 @@ function addToolCard(toolCall) {
   return card;
 }
 
+function renderSyncPanel(diff, tid) {
+  const wrap = document.createElement("div");
+  wrap.className = "msg assistant";
+  wrap.innerHTML = '<div class="sync-panel"></div>';
+  document.getElementById("messages").appendChild(wrap);
+  const panel = wrap.querySelector(".sync-panel");
+
+  const added = diff.added || [];
+  const modified = diff.modified || [];
+  const deleted = diff.deleted || [];
+  const total = added.length + modified.length + deleted.length;
+
+  let html = '<div class="sync-header"> Shadow 工作空间有 <b>' + total + '</b> 项变更待同步</div>';
+  html += '<div class="sync-summary">';
+  if (added.length) html += '<span class="sync-tag sync-added">+' + added.length + ' 新增</span>';
+  if (modified.length) html += '<span class="sync-tag sync-modified">~' + modified.length + ' 修改</span>';
+  if (deleted.length) html += '<span class="sync-tag sync-deleted">-' + deleted.length + ' 删除</span>';
+  html += '</div>';
+
+  html += '<div class="sync-files">';
+  for (const f of added) html += '<div class="sync-file sync-added"><span class="sf-icon">+</span> ' + escapeHtml(f) + '</div>';
+  for (const f of modified) html += '<div class="sync-file sync-modified"><span class="sf-icon">~</span> ' + escapeHtml(f) + '</div>';
+  for (const f of deleted) html += '<div class="sync-file sync-deleted"><span class="sf-icon">-</span> ' + escapeHtml(f) + '</div>';
+  html += '</div>';
+
+  html += '<div class="sync-actions">';
+  html += '<button class="sync-btn sync-apply">同步到工作空间</button>';
+  html += '<button class="sync-btn sync-revert">拒绝变更</button>';
+  html += '</div>';
+
+  panel.innerHTML = html;
+  scrollBottom();
+
+  panel.querySelector(".sync-apply").addEventListener("click", async () => {
+    panel.querySelector(".sync-actions").innerHTML = '<span class="sync-msg">同步中...</span>';
+    try {
+      const resp = await fetch("/workspace/sync?thread_id=" + encodeURIComponent(tid), {
+        method: "POST",
+        headers: { "Authorization": "Bearer " + authToken },
+      });
+      const data = await resp.json();
+      if (resp.ok) {
+        syncPending = false;
+        setSendingState(false);
+        panel.querySelector(".sync-actions").innerHTML = '<span class="sync-msg sync-ok">已同步 ' + (data.synced || 0) + ' 项变更</span>';
+      } else {
+        panel.querySelector(".sync-actions").innerHTML = '<span class="sync-msg sync-err">' + escapeHtml(data.detail || "同步失败") + '</span>';
+      }
+    } catch (e) {
+      panel.querySelector(".sync-actions").innerHTML = '<span class="sync-msg sync-err">网络错误：' + escapeHtml(e.message) + '</span>';
+    }
+    scrollBottom();
+  });
+
+  panel.querySelector(".sync-revert").addEventListener("click", async () => {
+    panel.querySelector(".sync-actions").innerHTML = '<span class="sync-msg">撤销中...</span>';
+    try {
+      const resp = await fetch("/workspace/revert?thread_id=" + encodeURIComponent(tid), {
+        method: "POST",
+        headers: { "Authorization": "Bearer " + authToken },
+      });
+      const data = await resp.json();
+      if (resp.ok) {
+        syncPending = false;
+        setSendingState(false);
+        panel.querySelector(".sync-actions").innerHTML = '<span class="sync-msg sync-ok">已撤销，工作空间已恢复</span>';
+      } else {
+        panel.querySelector(".sync-actions").innerHTML = '<span class="sync-msg sync-err">' + escapeHtml(data.detail || "撤销失败") + '</span>';
+      }
+    } catch (e) {
+      panel.querySelector(".sync-actions").innerHTML = '<span class="sync-msg sync-err">网络错误：' + escapeHtml(e.message) + '</span>';
+    }
+    scrollBottom();
+  });
+}
+
 function renderApprovalButtons(card, ev) {
   const existing = card.querySelector(".tc-approval");
   if (existing) existing.remove();
@@ -846,6 +949,7 @@ function handleAgentEvent(ev, state) {
   } else if (ev.type === "error") {
     removeTyping();
     approvalPending = false;
+    syncPending = false;
     setSendingState(false);
     addMsg("assistant", "⚠️ " + (ev.message || "未知错误"));
   } else if (ev.type === "done") {
@@ -853,7 +957,14 @@ function handleAgentEvent(ev, state) {
     curTidEl.textContent = currentTid ? "· " + currentTid.slice(0, 8) : "";
     removeTyping();
     approvalPending = false;
-    setSendingState(false);
+    if (ev.pending_sync && ev.diff) {
+      syncPending = true;
+      setSendingState(false);
+      renderSyncPanel(ev.diff, ev.thread_id);
+    } else {
+      syncPending = false;
+      setSendingState(false);
+    }
     if (!state.assistantBubble) addMsg("assistant", "（无内容返回）");
     Object.values(state.toolCards).forEach((card) => { card.style.display = "none"; });
     loadSessions();
@@ -889,13 +1000,13 @@ function setSendingState(isSending) {
   } else {
     sendBtn.textContent = "\u27A4";
     sendBtn.classList.remove("stop-mode");
-    sendBtn.disabled = approvalPending;
+    sendBtn.disabled = approvalPending || syncPending;
   }
 }
 
 async function sendMessage() {
   const text = inputEl.value.trim();
-  if ((!text && !currentImage && !currentFileText) || sending || approvalPending) return;
+  if ((!text && !currentImage && !currentFileText) || sending || approvalPending || syncPending) return;
   setSendingState(true);
   currentAbort = new AbortController();
   inputEl.value = "";

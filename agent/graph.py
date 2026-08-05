@@ -14,7 +14,9 @@ from agent.memory.trimming import make_trim_middleware
 from agent.memory.state_bar import make_state_bar_middleware
 from agent.memory.user_memory import load_memories, init_tables
 from agent.memory.tracing import TracingCallbackHandler, init_traces_table
+from agent.sandbox.snapshot import init_snapshots_table
 from agent.permissions import permission_gate, permission_prompt_section, DEFAULT_PERMISSION
+from agent.middleware.shadow_gate import shadow_gate
 from agent.prompts import SYSTEM_PROMPT
 
 
@@ -98,6 +100,7 @@ def build_graph(settings: Settings | None = None):
 
 def build_graph_with_model(settings: Settings, model_name: str):
     init_tables()
+    init_snapshots_table(settings.sqlite_path)
     if settings.enable_tracing:
         init_traces_table()
     llm = build_llm_with_model(settings, model_name)
@@ -108,6 +111,7 @@ def build_graph_with_model(settings: Settings, model_name: str):
         TodoListMiddleware(),
         ModelCallLimitMiddleware(run_limit=settings.model_call_limit),
         permission_gate,
+        shadow_gate,
     ]
     text_only_middleware = make_text_only_input_middleware(settings, model_name)
     if text_only_middleware is not None:

@@ -28,12 +28,14 @@ class ReadFileTool(BaseTool):
     def _run(self, path: str, start_line: int = 1, end_line: int = 0,
              config: RunnableConfig = None) -> str:
         from agent.memory.user_memory import get_workspace
+        from agent.sandbox.shadow import get_active_workspace
 
         user_id = (config or {}).get("configurable", {}).get("user_id")
         if not user_id:
             return "无法读取：未识别用户身份"
 
-        ws = get_workspace(user_id)
+        tid = (config or {}).get("configurable", {}).get("thread_id")
+        ws = get_active_workspace(user_id, tid) or get_workspace(user_id)
         if not ws:
             return "未设置工作空间，请先在页面右上角设置工作空间路径。"
 

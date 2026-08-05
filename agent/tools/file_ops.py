@@ -9,10 +9,14 @@ _BLOCKED_FILES = {".env", ".env.local", ".env.production"}
 _MAX_CONTENT = 500_000
 
 
-def _resolve_path(file_path: str, user_id: int):
+def _resolve_path(file_path: str, user_id: int, config=None):
     from agent.memory.user_memory import get_workspace
+    from agent.sandbox.shadow import get_active_workspace
 
-    ws = get_workspace(user_id)
+    tid = None
+    if config:
+        tid = (config or {}).get("configurable", {}).get("thread_id")
+    ws = get_active_workspace(user_id, tid) or get_workspace(user_id)
     if not ws:
         return None, "未设置工作空间，请先在页面右上角设置工作空间路径。"
     root = Path(ws).resolve()
@@ -41,7 +45,7 @@ class WriteFileTool(BaseTool):
         if len(content) > _MAX_CONTENT:
             return f"内容过大（{len(content)} 字符），上限 {_MAX_CONTENT} 字符。"
 
-        p, err = _resolve_path(path, user_id)
+        p, err = _resolve_path(path, user_id, config)
         if err:
             return err
 
@@ -67,7 +71,7 @@ class EditFileTool(BaseTool):
         if not user_id:
             return "无法编辑：未识别用户身份"
 
-        p, err = _resolve_path(path, user_id)
+        p, err = _resolve_path(path, user_id, config)
         if err:
             return err
         if not p.exists():
