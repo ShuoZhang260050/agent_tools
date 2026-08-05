@@ -39,11 +39,11 @@ def test_models_endpoint(monkeypatch):
         }
 
 
-def test_index_returns_html():
+def test_health_endpoint():
     with TestClient(app) as c:
-        r = c.get("/")
+        r = c.get("/health")
         assert r.status_code == 200
-        assert "Agent Chat" in r.text
+        assert r.json()["status"] == "ok"
 
 
 def test_register_and_login(tmp_path):

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, StreamingResponse, Response
+from fastapi.responses import StreamingResponse, Response
 from pydantic import BaseModel
 
 from langchain_core.messages import HumanMessage
@@ -72,9 +72,6 @@ def get_graph(model: str | None = None):
         init_tables()
         _graphs[model] = build_graph_with_model(settings, model)
     return _graphs[model]
-
-
-_STATIC_DIR = Path(__file__).parent / "static"
 
 
 def _sse(obj) -> str:
@@ -154,12 +151,6 @@ class AuthReq(BaseModel):
     """用户认证请求模型。"""
     username: str
     password: str
-
-
-@app.get("/", response_class=HTMLResponse)
-def index():
-    """返回前端单页 HTML。"""
-    return HTMLResponse((_STATIC_DIR / "index.html").read_text(encoding="utf-8"))
 
 
 @app.get("/health")
