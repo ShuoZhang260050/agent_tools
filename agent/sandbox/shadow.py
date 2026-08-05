@@ -252,6 +252,16 @@ def clear_active_shadow(user_id: int, thread_id: str) -> None:
         shutil.rmtree(path, ignore_errors=True)
 
 
+def clear_all_user_shadows(user_id: int) -> None:
+    """清除指定用户的所有活跃 shadow（工作空间变更时调用）。"""
+    with _shadow_lock:
+        keys = [k for k in _active_shadows if k[0] == user_id]
+        paths = [_active_shadows.pop(k) for k in keys]
+    for path in paths:
+        if path and os.path.isdir(path):
+            shutil.rmtree(path, ignore_errors=True)
+
+
 def create_shadow_if_needed(user_id: int, thread_id: str) -> str | None:
     """如 shadow 不存在则创建，已存在则复用。"""
     existing = get_active_workspace(user_id, thread_id)

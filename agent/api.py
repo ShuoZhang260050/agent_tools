@@ -41,6 +41,7 @@ from agent.memory.user_memory import (
 from agent.sandbox.shadow import (
     get_active_workspace,
     clear_active_shadow,
+    clear_all_user_shadows,
     ShadowManager,
     verify_shadow,
 )
@@ -566,6 +567,7 @@ def set_workspace_api(path: str, current: dict = Depends(get_current_user)):
     if not p.is_dir():
         raise HTTPException(status_code=400, detail="路径不是目录")
     saved = set_workspace(current["id"], str(p.resolve()))
+    clear_all_user_shadows(current["id"])
     return {"workspace": saved}
 
 
