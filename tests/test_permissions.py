@@ -98,8 +98,8 @@ def test_request_approval_interrupts_and_resumes_approved(tmp_path, monkeypatch)
     settings = _settings(tmp_path, monkeypatch)
     uid = _setup_user(tmp_path, monkeypatch)
     model = FakeToolModel([
-        AIMessage(content="", tool_calls=[{"name": "run_command",
-            "args": {"command": "echo hi"}, "id": "c1", "type": "tool_call"}]),
+        AIMessage(content="", tool_calls=[{"name": "save_memory",
+            "args": {"key": "test", "value": "hi"}, "id": "c1", "type": "tool_call"}]),
         AIMessage(content="resumed-ok"),
     ])
     graph = _build(model, settings)
@@ -109,7 +109,7 @@ def test_request_approval_interrupts_and_resumes_approved(tmp_path, monkeypatch)
     assert [type(m).__name__ for m in out["messages"]] == ["HumanMessage", "AIMessage"]
     pending = find_pending_approval(graph, cfg)
     assert pending is not None
-    assert pending["tool"] == "run_command"
+    assert pending["tool"] == "save_memory"
     assert pending["tool_call_id"] == "c1"
 
     out2 = graph.invoke(Command(resume="approved"), config=cfg)
@@ -124,8 +124,8 @@ def test_request_approval_denied_returns_cancelled_message(tmp_path, monkeypatch
     settings = _settings(tmp_path, monkeypatch)
     uid = _setup_user(tmp_path, monkeypatch)
     model = FakeToolModel([
-        AIMessage(content="", tool_calls=[{"name": "run_command",
-            "args": {"command": "echo nope"}, "id": "d1", "type": "tool_call"}]),
+        AIMessage(content="", tool_calls=[{"name": "save_memory",
+            "args": {"key": "test", "value": "nope"}, "id": "d1", "type": "tool_call"}]),
         AIMessage(content="denied-ok"),
     ])
     graph = _build(model, settings)
@@ -155,16 +155,32 @@ def test_request_approval_nonsensitive_tool_runs_freely(tmp_path, monkeypatch):
     assert any(type(m).__name__ == "ToolMessage" for m in out["messages"])
 
 
+def test_request_approval_sandbox_tool_no_interrupt(tmp_path, monkeypatch):
+    """沙箱工具在请求审批模式下不需逐条审批，由 sync 面板统一确认。"""
+    settings = _settings(tmp_path, monkeypatch)
+    uid = _setup_user(tmp_path, monkeypatch)
+    model = FakeToolModel([
+        AIMessage(content="", tool_calls=[{"name": "run_command",
+            "args": {"command": "echo hi"}, "id": "sb1", "type": "tool_call"}]),
+        AIMessage(content="done"),
+    ])
+    graph = _build(model, settings)
+    cfg = {"configurable": {"thread_id": "sandbox", "user_id": uid, "permission": REQUEST_APPROVAL}}
+    out = graph.invoke({"messages": [HumanMessage(content="go")]}, config=cfg)
+    assert find_pending_approval(graph, cfg) is None
+    assert any(type(m).__name__ == "ToolMessage" for m in out["messages"])
+
+
 def test_multiple_pending_interrupts_resume_all(tmp_path, monkeypatch):
     """LLM 一次返回两个敏感工具调用时，两个 interrupt 同时挂起，resume 字典恢复全部。"""
     settings = _settings(tmp_path, monkeypatch)
     uid = _setup_user(tmp_path, monkeypatch)
     model = FakeToolModel([
         AIMessage(content="", tool_calls=[
-            {"name": "run_command",
-             "args": {"command": "echo a"}, "id": "m1", "type": "tool_call"},
-            {"name": "run_command",
-             "args": {"command": "echo b"}, "id": "m2", "type": "tool_call"},
+            {"name": "save_memory",
+             "args": {"key": "k1", "value": "v1"}, "id": "m1", "type": "tool_call"},
+            {"name": "save_memory",
+             "args": {"key": "k2", "value": "v2"}, "id": "m2", "type": "tool_call"},
         ]),
         AIMessage(content="both-done"),
     ])
@@ -191,10 +207,10 @@ def test_multiple_pending_interrupts_deny_all(tmp_path, monkeypatch):
     uid = _setup_user(tmp_path, monkeypatch)
     model = FakeToolModel([
         AIMessage(content="", tool_calls=[
-            {"name": "run_command",
-             "args": {"command": "echo a"}, "id": "d1", "type": "tool_call"},
-            {"name": "run_python",
-             "args": {"code": "print(1)"}, "id": "d2", "type": "tool_call"},
+            {"name": "save_memory",
+             "args": {"key": "k1", "value": "v1"}, "id": "d1", "type": "tool_call"},
+            {"name": "http_request",
+             "args": {"url": "http://example.com", "method": "GET"}, "id": "d2", "type": "tool_call"},
         ]),
         AIMessage(content="denied-done"),
     ])
@@ -224,8 +240,8 @@ def test_stream_agent_survives_interrupt_update(tmp_path, monkeypatch):
     settings = _settings(tmp_path, monkeypatch)
     uid = _setup_user(tmp_path, monkeypatch)
     model = FakeToolModel([
-        AIMessage(content="", tool_calls=[{"name": "run_command",
-            "args": {"command": "echo hi"}, "id": "s1", "type": "tool_call"}]),
+        AIMessage(content="", tool_calls=[{"name": "save_memory",
+            "args": {"key": "test", "value": "hi"}, "id": "s1", "type": "tool_call"}]),
         AIMessage(content="resumed"),
     ])
     graph = _build(model, settings)

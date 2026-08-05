@@ -4,6 +4,8 @@ from langchain.agents.middleware import wrap_tool_call
 from langchain_core.messages import ToolMessage
 from langgraph.types import interrupt
 
+from agent.middleware.shadow_gate import SANDBOX_TOOLS
+
 REQUEST_APPROVAL = "request_approval"
 AUTO_APPROVE = "auto_approve"
 FULL_ACCESS = "full_access"
@@ -35,13 +37,14 @@ def is_sensitive(name: str) -> bool:
 
 def permission_prompt_section(permission: str) -> str:
     """生成权限说明的提示词片段。"""
-    sensitive = "、".join(sorted(SENSITIVE_TOOLS))
+    sandbox = "、".join(sorted(SENSITIVE_TOOLS & SANDBOX_TOOLS))
+    non_sandbox = "、".join(sorted(SENSITIVE_TOOLS - SANDBOX_TOOLS))
     if permission == REQUEST_APPROVAL:
         return (
             "\n\n<permission>\n"
-            f"当前权限模式：请求审批。在执行以下敏感工具（{sensitive}）前，"
-            "系统会暂停并请求用户确认；只有收到确认后才会真正执行。"
-            "只读类工具（calculator、web_search、read_file 等）可直接执行。"
+            f"当前权限模式：请求审批。沙箱工具（{sandbox}）在 Shadow 副本中执行，"
+            "无需逐条审批，最终变更通过同步面板统一确认。"
+            f"以下非沙箱敏感工具（{non_sandbox}）执行前会暂停并请求用户确认。"
             "调用敏感工具前请先用一句话说明意图。\n"
             "</permission>"
         )
@@ -71,7 +74,7 @@ def permission_gate(request, handler):
     configurable = config.get("configurable", {}) if isinstance(config, dict) else {}
     permission = configurable.get("permission", DEFAULT_PERMISSION)
 
-    if is_sensitive(name) and permission == REQUEST_APPROVAL:
+    if is_sensitive(name) and permission == REQUEST_APPROVAL and name not in SANDBOX_TOOLS:
         decision = interrupt({
             "tool": name,
             "args": tool_call.get("args", {}),
