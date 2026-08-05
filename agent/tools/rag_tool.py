@@ -3,6 +3,7 @@ from langchain_core.tools import BaseTool
 
 
 class RetrieveTool(BaseTool):
+    """RAG检索工具。"""
     name: str = "retrieve"
     description: str = (
         "检索用户上传的文档知识库，根据查询返回最相关的文本片段。"
@@ -11,6 +12,7 @@ class RetrieveTool(BaseTool):
     )
 
     def _run(self, query: str, top_k: int = 3, config: RunnableConfig = None) -> str:
+        """语义检索知识库。"""
         user_id = (config or {}).get("configurable", {}).get("user_id")
         if not user_id:
             return "无法检索：未识别用户身份"

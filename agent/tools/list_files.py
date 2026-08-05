@@ -9,6 +9,7 @@ _MAX_ENTRIES = 200
 
 
 class ListFilesTool(BaseTool):
+    """文件列表工具。"""
     name: str = "list_files"
     description: str = (
         "列出工作空间内的文件和子目录。"
@@ -18,6 +19,7 @@ class ListFilesTool(BaseTool):
 
     def _run(self, path: str = ".", pattern: str = "",
              config: RunnableConfig = None) -> str:
+        """列出工作空间文件和子目录。"""
         from agent.memory.user_memory import get_workspace
         from agent.sandbox.shadow import get_active_workspace
 

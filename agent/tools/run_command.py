@@ -10,6 +10,7 @@ _MAX_OUTPUT = 20000
 
 
 class RunCommandTool(BaseTool):
+    """命令执行工具。"""
     name: str = "run_command"
     description: str = (
         "在工作空间中执行 shell 命令（如 git log、pytest、npm run build 等）。"
@@ -18,6 +19,7 @@ class RunCommandTool(BaseTool):
 
     def _run(self, command: str, timeout: int = None,
              config: RunnableConfig = None) -> str:
+        """在工作空间执行shell命令。"""
         from agent.memory.user_memory import get_workspace
         from agent.sandbox.shadow import get_active_workspace
 

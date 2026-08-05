@@ -48,8 +48,10 @@ def _ensure_user_start(trimmed, original):
 
 
 def make_trim_middleware(max_tokens: int):
+    """创建滑动窗口上下文裁剪中间件。"""
     @wrap_model_call(name="TrimMessagesMiddleware")
     def trim(request, handler):
+        """裁剪中间件实现，按 token 预算滑动窗口。"""
         trimmed = trim_messages(
             request.messages,
             strategy="last",

@@ -9,11 +9,13 @@ from langchain_core.callbacks import BaseCallbackHandler
 
 
 def _get_db():
+    """获取 SQLite 数据库连接。"""
     from agent.config import Settings
     return sqlite3.connect(Settings().sqlite_path, check_same_thread=False)
 
 
 def init_traces_table():
+    """初始化追踪记录表。"""
     con = _get_db()
     con.executescript("""
         CREATE TABLE IF NOT EXISTS traces (
@@ -35,28 +37,35 @@ def init_traces_table():
 
 
 def _truncate(text: str, max_len: int = 500) -> str:
+    """截断字符串到指定长度。"""
     if not text:
         return ""
     return text[:max_len] + ("..." if len(text) > max_len else "")
 
 
 class TracingCallbackHandler(BaseCallbackHandler):
+    """LLM/工具调用追踪回调处理器。"""
     def __init__(self, model_name: str = ""):
+        """初始化追踪处理器，记录模型名。"""
         self._model_name = model_name
         self._llm_starts: dict[str, dict] = {}
         self._tool_starts: dict[str, dict] = {}
 
     def _extract_context(self, kwargs: dict) -> tuple[str | None, int | None]:
+        """从 config 提取 user_id 和 thread_id。"""
         metadata = kwargs.get("metadata", {}) or {}
         return metadata.get("thread_id"), metadata.get("user_id")
 
     def on_llm_start(self, serialized, prompts, *, run_id=None, **kwargs):
+        """LLM 调用开始回调。"""
         self._start_llm(serialized, prompts, run_id, kwargs)
 
     def on_chat_model_start(self, serialized, messages, *, run_id=None, **kwargs):
+        """聊天模型调用开始回调。"""
         self._start_llm(serialized, [], run_id, kwargs)
 
     def _start_llm(self, serialized, prompts, run_id, kwargs):
+        """记录 LLM 调用开始（内部方法）。"""
         run_id = str(run_id or uuid.uuid4())
         thread_id, user_id = self._extract_context(kwargs)
         self._llm_starts[run_id] = {
@@ -68,6 +77,7 @@ class TracingCallbackHandler(BaseCallbackHandler):
         }
 
     def on_llm_end(self, response, *, run_id=None, **kwargs):
+        """LLM 调用结束回调，计算耗时并保存。"""
         run_id = str(run_id)
         info = self._llm_starts.pop(run_id, None)
         if not info:
@@ -102,6 +112,7 @@ class TracingCallbackHandler(BaseCallbackHandler):
         )
 
     def on_tool_start(self, serialized, input_str, *, run_id=None, **kwargs):
+        """工具调用开始回调。"""
         run_id = str(run_id or uuid.uuid4())
         thread_id, user_id = self._extract_context(kwargs)
         tool_name = ""
@@ -116,6 +127,7 @@ class TracingCallbackHandler(BaseCallbackHandler):
         }
 
     def on_tool_end(self, output, *, run_id=None, **kwargs):
+        """工具调用结束回调，保存追踪记录。"""
         run_id = str(run_id)
         info = self._tool_starts.pop(run_id, None)
         if not info:
@@ -128,6 +140,7 @@ class TracingCallbackHandler(BaseCallbackHandler):
         )
 
     def _save_trace(self, thread_id, user_id, typ, name, input_text, output_text, duration_ms, token_usage):
+        """保存追踪记录到数据库。"""
         con = _get_db()
         now = datetime.now().isoformat()
         trace_id = str(uuid.uuid4())
@@ -143,6 +156,7 @@ class TracingCallbackHandler(BaseCallbackHandler):
 
 
 def get_traces(thread_id: str | None = None, limit: int = 50) -> list[dict]:
+    """查询指定会话的追踪记录。"""
     con = _get_db()
     try:
         if thread_id:

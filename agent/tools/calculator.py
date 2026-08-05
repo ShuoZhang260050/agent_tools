@@ -10,6 +10,7 @@ _OPS = {
 }
 
 def _eval(node: ast.AST) -> float | int:
+    """安全求值数学表达式。"""
     if isinstance(node, ast.Expression):
         return _eval(node.body)
     if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):

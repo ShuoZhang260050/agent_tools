@@ -10,11 +10,13 @@ from agent.config import Settings
 
 
 def _get_db():
+    """获取 SQLite 数据库连接。"""
     from agent.config import Settings
     return sqlite3.connect(Settings().sqlite_path, check_same_thread=False)
 
 
 def build_embeddings(settings: Settings) -> OpenAIEmbeddings:
+    """构建 Embeddings 实例（OpenAI 兼容）。"""
     api_key = settings.embedding_api_key
     if api_key is not None:
         api_key = api_key.get_secret_value()
@@ -30,6 +32,7 @@ def build_embeddings(settings: Settings) -> OpenAIEmbeddings:
 
 
 def chunk_text(text: str, chunk_size: int = 500, chunk_overlap: int = 50) -> list[str]:
+    """将文本按固定大小分块。"""
     if not text:
         return []
     chunks = []
@@ -54,6 +57,7 @@ def ingest_document(
     chunk_size: int = 500,
     chunk_overlap: int = 50,
 ) -> int:
+    """将文档分块并向量化后存入数据库。"""
     chunks = chunk_text(text, chunk_size, chunk_overlap)
     if not chunks:
         return 0
@@ -95,6 +99,7 @@ def search(
     embeddings: OpenAIEmbeddings,
     top_k: int = 3,
 ) -> list[dict]:
+    """语义检索文档分块，返回最相关结果。"""
     query_vec = embeddings.embed_query(query)
     con = _get_db()
     try:
@@ -127,6 +132,7 @@ def search(
 
 
 def delete_document_chunks(user_id: int, doc_id: int) -> int:
+    """删除文档的所有分块。"""
     con = _get_db()
     try:
         cur = con.execute(

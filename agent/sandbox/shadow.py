@@ -16,6 +16,7 @@ VERIFY_TIMEOUT = 120
 
 
 def _get_skip_dirs() -> frozenset[str]:
+    """从 Settings 读取 shadow 跳过目录集合，失败回退默认值。"""
     try:
         from agent.config import Settings
         s = Settings()
@@ -26,6 +27,7 @@ def _get_skip_dirs() -> frozenset[str]:
 
 
 def _get_max_bytes() -> int:
+    """从 Settings 读取 shadow 大小上限，失败回退默认值。"""
     try:
         from agent.config import Settings
         return Settings().shadow_max_bytes
@@ -34,6 +36,7 @@ def _get_max_bytes() -> int:
 
 
 def _get_verify_timeout() -> int:
+    """从 Settings 读取验证命令超时秒数，失败回退默认值。"""
     try:
         from agent.config import Settings
         return Settings().shadow_verify_timeout
@@ -42,10 +45,12 @@ def _get_verify_timeout() -> int:
 
 
 def _should_skip(name: str) -> bool:
+    """判断目录名是否在跳过集合中。"""
     return name in SKIP_DIRS
 
 
 def _load_gitignore(root: Path) -> list[str]:
+    """加载 .gitignore 文件中的 glob 模式列表。"""
     gi = root / ".gitignore"
     if not gi.is_file():
         return []
@@ -61,6 +66,7 @@ def _load_gitignore(root: Path) -> list[str]:
 
 
 def _matches_gitignore(rel_path: str, patterns: list[str]) -> bool:
+    """检查相对路径是否匹配 gitignore 模式。"""
     if not patterns:
         return False
     rel = rel_path.replace("\\", "/")
@@ -77,6 +83,7 @@ def _matches_gitignore(rel_path: str, patterns: list[str]) -> bool:
 
 
 def _walk_files(root_path: str) -> dict[str, str]:
+    """遍历目录树，返回相对路径到绝对路径的映射。"""
     result = {}
     root = Path(root_path)
     if not root.is_dir():
@@ -93,6 +100,7 @@ def _walk_files(root_path: str) -> dict[str, str]:
 
 
 def _file_hash(path: Path) -> str:
+    """计算文件内容的 MD5 哈希值。"""
     h = hashlib.md5()
     try:
         with open(path, "rb") as f:
@@ -104,8 +112,11 @@ def _file_hash(path: Path) -> str:
 
 
 class ShadowManager:
+    """Shadow 工作空间管理器，提供创建/对比/同步/验证功能。"""
+
     @staticmethod
     def create_shadow(real_path: str, shadow_path: str) -> dict:
+        """过滤拷贝真实工作空间到 shadow 路径，返回文件数和字节数。"""
         src = Path(real_path).resolve()
         dst = Path(shadow_path)
         if not src.is_dir():
@@ -155,6 +166,7 @@ class ShadowManager:
 
     @staticmethod
     def list_shadow_diff(shadow_path: str, real_path: str) -> dict:
+        """对比 shadow 与真实工作空间的差异，返回 added/modified/deleted。"""
         shadow = Path(shadow_path)
         real = Path(real_path)
         skip_dirs = _get_skip_dirs()
@@ -199,6 +211,7 @@ class ShadowManager:
 
     @staticmethod
     def apply_shadow_to_real(shadow_path: str, real_path: str) -> dict:
+        """将 shadow 变更同步到真实工作空间。"""
         diff = ShadowManager.list_shadow_diff(shadow_path, real_path)
         real = Path(real_path)
         shadow = Path(shadow_path)
@@ -232,6 +245,7 @@ _shadow_lock = threading.Lock()
 
 
 def get_shadow_path(user_id: int, thread_id: str) -> str:
+    """计算指定用户和会话的 shadow 临时路径。"""
     return os.path.join(
         tempfile.gettempdir(),
         f"agent_shadow_{user_id}_{thread_id}",
@@ -239,11 +253,13 @@ def get_shadow_path(user_id: int, thread_id: str) -> str:
 
 
 def set_active_shadow(user_id: int, thread_id: str, shadow_path: str) -> None:
+    """设置当前活跃的 shadow 路径。"""
     with _shadow_lock:
         _active_shadows[(user_id, thread_id)] = shadow_path
 
 
 def get_active_workspace(user_id: int, thread_id: str | None = None) -> str | None:
+    """获取当前活跃的 shadow 路径，无则返回 None。"""
     if thread_id is None:
         return None
     with _shadow_lock:
@@ -251,6 +267,7 @@ def get_active_workspace(user_id: int, thread_id: str | None = None) -> str | No
 
 
 def clear_active_shadow(user_id: int, thread_id: str) -> None:
+    """清除活跃 shadow 并删除临时目录。"""
     with _shadow_lock:
         path = _active_shadows.pop((user_id, thread_id), None)
     if path and os.path.isdir(path):
@@ -258,6 +275,7 @@ def clear_active_shadow(user_id: int, thread_id: str) -> None:
 
 
 def create_shadow_if_needed(user_id: int, thread_id: str) -> str | None:
+    """如 shadow 不存在则创建，已存在则复用。"""
     existing = get_active_workspace(user_id, thread_id)
     if existing:
         return existing
@@ -272,6 +290,7 @@ def create_shadow_if_needed(user_id: int, thread_id: str) -> str | None:
 
 
 def verify_shadow(shadow_path: str, command: str, timeout: int = None) -> dict:
+    """在 shadow 中运行验证命令，返回通过状态和输出。"""
     if timeout is None:
         timeout = _get_verify_timeout()
     try:

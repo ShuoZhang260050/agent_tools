@@ -18,6 +18,7 @@ _result_queue: queue.Queue = queue.Queue()
 
 
 def _browser_worker():
+    """浏览器工作线程。"""
     global _browser, _page
     from playwright.sync_api import sync_playwright
     pw = sync_playwright().start()
@@ -46,6 +47,7 @@ def _browser_worker():
 
 
 def _browser_call(fn):
+    """调用浏览器命令。"""
     global _browser_thread
     if _browser_thread is None or not _browser_thread.is_alive():
         _browser_thread = threading.Thread(target=_browser_worker, daemon=True)
@@ -58,6 +60,7 @@ def _browser_call(fn):
 
 
 def _do_open(url):
+    """打开URL。"""
     global _page
     page = _browser.new_page()
     page.set_viewport_size({"width": 1280, "height": 800})
@@ -68,6 +71,7 @@ def _do_open(url):
 
 
 def _do_screenshot():
+    """截图。"""
     from agent.config import Settings
     png = _page.screenshot()
     filename = f"screenshot_{_uuid.uuid4().hex[:8]}.png"
@@ -78,16 +82,19 @@ def _do_screenshot():
 
 
 def _do_click(selector):
+    """点击元素。"""
     _page.click(selector, timeout=_TIMEOUT * 1000)
     return f"已点击：{selector}"
 
 
 def _do_type(selector, text):
+    """输入文本。"""
     _page.fill(selector, text or "", timeout=_TIMEOUT * 1000)
     return f"已输入到 {selector}：{text}"
 
 
 def _do_extract(selector):
+    """提取内容。"""
     if selector:
         elements = _page.query_selector_all(selector)
         if not elements:
@@ -102,6 +109,7 @@ def _do_extract(selector):
 
 
 class BrowserTool(BaseTool):
+    """浏览器自动化工具类。"""
     name: str = "browser"
     description: str = (
         "浏览器自动化工具，支持 JS 渲染的动态页面。"
@@ -111,6 +119,7 @@ class BrowserTool(BaseTool):
 
     def _run(self, action: str, url: str = "", selector: str = "",
              text: str = "", config: RunnableConfig = None) -> str:
+        """执行浏览器操作。"""
         action = action.strip().lower()
         if action not in ("open", "screenshot", "click", "type", "extract", "close"):
             return f"无效 action：{action}。支持 open/screenshot/click/type/extract/close。"

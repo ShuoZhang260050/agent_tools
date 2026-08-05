@@ -5,11 +5,13 @@ from agent.auth import hash_password, verify_password
 
 
 def _get_db():
+    """获取 SQLite 数据库连接。"""
     from agent.config import Settings
     return sqlite3.connect(Settings().sqlite_path, check_same_thread=False)
 
 
 def init_tables():
+    """初始化所有数据库表。"""
     con = _get_db()
     con.executescript("""
         CREATE TABLE IF NOT EXISTS users (
@@ -58,6 +60,7 @@ def init_tables():
 
 
 def register_user(username: str, password: str) -> dict:
+    """注册新用户，返回用户信息。"""
     con = _get_db()
     existing = con.execute(
         "SELECT id FROM users WHERE username = ?", (username,)
@@ -77,6 +80,7 @@ def register_user(username: str, password: str) -> dict:
 
 
 def authenticate(username: str, password: str) -> dict | None:
+    """验证用户名密码，返回用户信息或 None。"""
     con = _get_db()
     row = con.execute(
         "SELECT id, username, password_hash FROM users WHERE username = ?",
@@ -91,6 +95,7 @@ def authenticate(username: str, password: str) -> dict | None:
 
 
 def load_memories(user_id: int) -> str:
+    """加载用户记忆，拼接为 XML 字符串。"""
     con = _get_db()
     rows = con.execute(
         "SELECT key, value FROM user_memory WHERE user_id = ? ORDER BY updated_at DESC",
@@ -104,6 +109,7 @@ def load_memories(user_id: int) -> str:
 
 
 def set_memory(user_id: int, key: str, value: str) -> str:
+    """设置或更新用户记忆键值对。"""
     con = _get_db()
     now = datetime.now().isoformat()
     con.execute(
@@ -117,6 +123,7 @@ def set_memory(user_id: int, key: str, value: str) -> str:
 
 
 def get_user_threads(user_id: int) -> list[str]:
+    """获取用户的所有会话 ID 列表。"""
     con = _get_db()
     rows = con.execute(
         "SELECT thread_id FROM user_threads WHERE user_id = ? ORDER BY rowid DESC",
@@ -127,6 +134,7 @@ def get_user_threads(user_id: int) -> list[str]:
 
 
 def get_user_threads_with_title(user_id: int) -> list[dict]:
+    """获取用户会话列表（含标题）。"""
     con = _get_db()
     rows = con.execute(
         "SELECT thread_id, title FROM user_threads WHERE user_id = ? ORDER BY rowid DESC",
@@ -137,6 +145,7 @@ def get_user_threads_with_title(user_id: int) -> list[dict]:
 
 
 def add_user_thread(user_id: int, thread_id: str, title: str | None = None):
+    """添加用户会话记录（如已存在则忽略）。"""
     con = _get_db()
     con.execute(
         "INSERT OR IGNORE INTO user_threads (user_id, thread_id, title) VALUES (?, ?, ?)",
@@ -152,6 +161,7 @@ def add_user_thread(user_id: int, thread_id: str, title: str | None = None):
 
 
 def update_thread_title(user_id: int, thread_id: str, title: str):
+    """更新会话标题。"""
     con = _get_db()
     con.execute(
         "UPDATE user_threads SET title = ? WHERE user_id = ? AND thread_id = ?",
@@ -162,6 +172,7 @@ def update_thread_title(user_id: int, thread_id: str, title: str):
 
 
 def delete_user_thread(user_id: int, thread_id: str):
+    """删除用户会话记录。"""
     con = _get_db()
     con.execute(
         "DELETE FROM user_threads WHERE user_id = ? AND thread_id = ?",
@@ -213,6 +224,7 @@ def cleanup_orphan_thread_data(sqlite_path: str) -> dict:
 
 
 def add_document(user_id: int, filename: str, chunk_count: int) -> int:
+    """添加文档记录，返回文档 ID。"""
     con = _get_db()
     now = datetime.now().isoformat()
     cur = con.execute(
@@ -226,6 +238,7 @@ def add_document(user_id: int, filename: str, chunk_count: int) -> int:
 
 
 def list_documents(user_id: int) -> list[dict]:
+    """列出用户的文档。"""
     con = _get_db()
     rows = con.execute(
         "SELECT id, filename, chunk_count, uploaded_at FROM documents WHERE user_id = ? ORDER BY uploaded_at DESC",
@@ -236,6 +249,7 @@ def list_documents(user_id: int) -> list[dict]:
 
 
 def delete_document(user_id: int, doc_id: int):
+    """删除文档及其分块。"""
     con = _get_db()
     con.execute(
         "DELETE FROM document_chunks WHERE user_id = ? AND doc_id = ?",
@@ -250,6 +264,7 @@ def delete_document(user_id: int, doc_id: int):
 
 
 def get_workspace(user_id: int) -> str | None:
+    """获取用户工作空间路径。"""
     con = _get_db()
     row = con.execute(
         "SELECT value FROM user_memory WHERE user_id = ? AND key = 'workspace_root'",
@@ -260,6 +275,7 @@ def get_workspace(user_id: int) -> str | None:
 
 
 def set_workspace(user_id: int, path: str) -> str:
+    """设置用户工作空间路径。"""
     con = _get_db()
     now = datetime.now().isoformat()
     con.execute(

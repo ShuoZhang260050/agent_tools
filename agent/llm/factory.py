@@ -4,10 +4,12 @@ from agent.config import Settings
 
 
 def build_llm(settings: Settings) -> BaseChatModel:
+    """按 Settings 构建 LLM 实例。"""
     return build_llm_with_model(settings, settings.llm_model)
 
 
 def build_llm_with_model(settings: Settings, model_name: str) -> BaseChatModel:
+    """按指定模型名构建 LLM 实例。"""
     if settings.llm_provider == "openai":
         return ChatOpenAI(
             model=model_name,

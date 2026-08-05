@@ -23,6 +23,7 @@ def _fetch(url: str) -> tuple[str, str]:
 
 
 def _extract_text(soup: BeautifulSoup) -> str:
+    """提取页面文本。"""
     for tag in soup(["script", "style", "nav", "footer", "header", "aside"]):
         tag.decompose()
     text = soup.get_text(separator="\n")
@@ -34,6 +35,7 @@ def _extract_text(soup: BeautifulSoup) -> str:
 
 
 def _extract_tables(soup: BeautifulSoup) -> str:
+    """提取页面表格。"""
     tables = soup.find_all("table")
     if not tables:
         return "无表格。"
@@ -59,6 +61,7 @@ def _extract_tables(soup: BeautifulSoup) -> str:
 
 
 def _extract_links(soup: BeautifulSoup) -> str:
+    """提取页面链接。"""
     seen = set()
     links = []
     for a in soup.find_all("a", href=True):

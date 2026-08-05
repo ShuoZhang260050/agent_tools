@@ -22,6 +22,7 @@ from agent.prompts import SYSTEM_PROMPT
 
 @dynamic_prompt
 def build_prompt(request):
+    """动态系统提示词中间件，注入用户记忆和权限说明。"""
     configurable = (request.runtime.context or {}).get("configurable", {}) if request.runtime else {}
     user_id = configurable.get("user_id")
     permission = configurable.get("permission", DEFAULT_PERMISSION)
@@ -35,10 +36,12 @@ _IMAGE_OMITTED = "[历史图片已省略：当前模型仅支持文本输入]"
 
 
 def _vision_model_names(settings: Settings) -> set[str]:
+    """从配置解析支持图片输入的模型名集合。"""
     return {m.strip() for m in settings.vision_models.split(",") if m.strip()}
 
 
 def _strip_image_parts(messages):
+    """从消息中移除图片内容，替换为占位文本。"""
     stripped = []
     for msg in messages:
         content = getattr(msg, "content", None)
@@ -74,17 +77,20 @@ def _strip_image_parts(messages):
 
 
 def make_text_only_input_middleware(settings: Settings, model_name: str):
+    """创建文本-only 输入中间件（非视觉模型用）。"""
     if model_name in _vision_model_names(settings):
         return None
 
     @wrap_model_call(name="TextOnlyInputMiddleware")
     def text_only_input(request, handler):
+        """文本-only 中间件实现，移除图片内容后传递。"""
         return handler(request.override(messages=_strip_image_parts(request.messages)))
 
     return text_only_input
 
 
 def _get_checkpointer(settings: Settings):
+    """获取或创建 SQLite checkpointer（单例缓存）。"""
     path = settings.sqlite_path
     if path not in _checkpointers:
         cm = build_checkpointer(path)
@@ -94,11 +100,13 @@ def _get_checkpointer(settings: Settings):
 
 
 def build_graph(settings: Settings | None = None):
+    """构建默认 agent 图（读 .env 配置）。"""
     settings = settings or Settings()
     return build_graph_with_model(settings, settings.llm_model)
 
 
 def build_graph_with_model(settings: Settings, model_name: str):
+    """构建指定模型的 agent 图，装配中间件链。"""
     init_tables()
     init_snapshots_table(settings.sqlite_path)
     if settings.enable_tracing:

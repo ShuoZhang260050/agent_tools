@@ -18,6 +18,7 @@ _TEXT_EXTS = {
 
 
 class SearchFilesTool(BaseTool):
+    """文件搜索工具。"""
     name: str = "search_files"
     description: str = (
         "搜索工作空间中的文件。"
@@ -28,6 +29,7 @@ class SearchFilesTool(BaseTool):
 
     def _run(self, query: str, path: str = ".", search_type: str = "all",
              config: RunnableConfig = None) -> str:
+        """按文件名或内容搜索。"""
         from agent.memory.user_memory import get_workspace
         from agent.sandbox.shadow import get_active_workspace
 

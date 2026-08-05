@@ -13,14 +13,17 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/login")
 
 
 def hash_password(password: str) -> str:
+    """对明文密码进行 bcrypt 哈希。"""
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
 
 
 def verify_password(plain: str, hashed: str) -> bool:
+    """验证明文密码与哈希值是否匹配。"""
     return bcrypt.checkpw(plain.encode(), hashed.encode())
 
 
 def create_access_token(user_id: int, username: str) -> str:
+    """为用户创建 JWT 访问令牌。"""
     settings = Settings()
     expire = datetime.now(timezone.utc) + timedelta(hours=settings.token_expire_hours)
     payload = {"sub": str(user_id), "username": username, "exp": expire}
@@ -28,11 +31,13 @@ def create_access_token(user_id: int, username: str) -> str:
 
 
 def decode_token(token: str) -> dict:
+    """解码 JWT 令牌，返回 payload。"""
     settings = Settings()
     return jwt.decode(token, settings.jwt_secret, algorithms=["HS256"])
 
 
 def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
+    """从请求令牌解析当前用户信息，用于 FastAPI 依赖注入。"""
     try:
         payload = decode_token(token)
     except jwt.ExpiredSignatureError:

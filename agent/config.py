@@ -3,6 +3,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    """pydantic-settings 配置类，读取 .env 环境变量。"""
+
     llm_provider: str = "openai"
     llm_model: str = "gpt-4o-mini"
     llm_api_key: SecretStr

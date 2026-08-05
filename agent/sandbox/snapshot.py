@@ -8,6 +8,7 @@ from pathlib import Path
 
 
 def init_snapshots_table(sqlite_path: str) -> None:
+    """初始化 file_snapshots 快照表。"""
     con = sqlite3.connect(sqlite_path, check_same_thread=False)
     con.execute("""
         CREATE TABLE IF NOT EXISTS file_snapshots (
@@ -26,6 +27,7 @@ def init_snapshots_table(sqlite_path: str) -> None:
 
 def save_snapshot(sqlite_path: str, user_id: int, thread_id: str,
                   real_path: str, diff: dict) -> int:
+    """保存被改文件快照到临时目录并记录到数据库，返回快照 ID。"""
     snapshot_dir = os.path.join(
         tempfile.gettempdir(),
         f"agent_snapshot_{user_id}_{thread_id}",
@@ -54,6 +56,7 @@ def save_snapshot(sqlite_path: str, user_id: int, thread_id: str,
 
 
 def restore_snapshot(sqlite_path: str, snapshot_id: int) -> dict:
+    """从快照恢复真实工作空间中被修改或删除的文件。"""
     con = sqlite3.connect(sqlite_path, check_same_thread=False)
     row = con.execute(
         "SELECT real_path, snapshot_path, diff_json FROM file_snapshots WHERE id = ?",
@@ -89,6 +92,7 @@ def restore_snapshot(sqlite_path: str, snapshot_id: int) -> dict:
 
 
 def list_snapshots(sqlite_path: str, user_id: int, thread_id: str) -> list[dict]:
+    """列出指定会话的所有快照。"""
     con = sqlite3.connect(sqlite_path, check_same_thread=False)
     rows = con.execute(
         "SELECT id, real_path, diff_json, created_at FROM file_snapshots "
@@ -108,6 +112,7 @@ def list_snapshots(sqlite_path: str, user_id: int, thread_id: str) -> list[dict]
 
 
 def get_latest_snapshot_id(sqlite_path: str, user_id: int, thread_id: str) -> int | None:
+    """获取指定会话的最新快照 ID。"""
     con = sqlite3.connect(sqlite_path, check_same_thread=False)
     row = con.execute(
         "SELECT id FROM file_snapshots WHERE user_id = ? AND thread_id = ? ORDER BY id DESC LIMIT 1",

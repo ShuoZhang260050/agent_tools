@@ -10,6 +10,7 @@ _MAX_CONTENT = 500_000
 
 
 def _resolve_path(file_path: str, user_id: int, config=None):
+    """解析文件路径并校验范围。"""
     from agent.memory.user_memory import get_workspace
     from agent.sandbox.shadow import get_active_workspace
 
@@ -30,6 +31,7 @@ def _resolve_path(file_path: str, user_id: int, config=None):
 
 
 class WriteFileTool(BaseTool):
+    """文件写入工具。"""
     name: str = "write_file"
     description: str = (
         "创建或覆盖文件。"
@@ -39,6 +41,7 @@ class WriteFileTool(BaseTool):
 
     def _run(self, path: str, content: str,
              config: RunnableConfig = None) -> str:
+        """执行文件写入。"""
         user_id = (config or {}).get("configurable", {}).get("user_id")
         if not user_id:
             return "无法写入：未识别用户身份"
@@ -59,6 +62,7 @@ class WriteFileTool(BaseTool):
 
 
 class EditFileTool(BaseTool):
+    """文件编辑工具。"""
     name: str = "edit_file"
     description: str = (
         "编辑文件：将文件中第一处匹配 old_text 的内容替换为 new_text。"
@@ -67,6 +71,7 @@ class EditFileTool(BaseTool):
 
     def _run(self, path: str, old_text: str, new_text: str,
              config: RunnableConfig = None) -> str:
+        """执行文件编辑。"""
         user_id = (config or {}).get("configurable", {}).get("user_id")
         if not user_id:
             return "无法编辑：未识别用户身份"

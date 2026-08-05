@@ -14,6 +14,7 @@ _MAX_OUTPUT = 20000
 
 
 class RunPythonTool(BaseTool):
+    """Python执行工具。"""
     name: str = "run_python"
     description: str = (
         "执行 Python 代码并返回输出。支持 print() 和表达式求值。"
@@ -23,6 +24,7 @@ class RunPythonTool(BaseTool):
 
     def _run(self, code: str, timeout: int = None,
              config: RunnableConfig = None) -> str:
+        """执行Python代码并返回输出。"""
         from agent.memory.user_memory import get_workspace
         from agent.sandbox.shadow import get_active_workspace
 

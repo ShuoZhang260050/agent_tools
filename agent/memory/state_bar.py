@@ -13,6 +13,7 @@ def _count_tool_calls(messages) -> int:
 
 
 def _build_state_bar(messages) -> str:
+    """构建状态栏文本（含模型/权限/上下文信息）。"""
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     tool_count = _count_tool_calls(messages)
     msg_count = len(messages)
@@ -32,6 +33,7 @@ def make_state_bar_middleware():
     """
     @wrap_model_call(name="StateBarMiddleware")
     def state_bar(request, handler):
+        """状态栏中间件，注入状态栏到系统消息。"""
         msgs = list(request.messages)
         info = _build_state_bar(msgs)
         msgs.append(SystemMessage(content=info))

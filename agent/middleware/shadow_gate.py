@@ -3,6 +3,7 @@ from langchain.agents.middleware import wrap_tool_call
 
 @wrap_tool_call(name="ShadowGateMiddleware")
 def shadow_gate(request, handler):
+    """Shadow 工作空间中间件，turn 首次工具调用时创建 shadow 副本。"""
     runtime = getattr(request, "runtime", None)
     config = getattr(runtime, "config", None) or {}
     configurable = config.get("configurable", {}) if isinstance(config, dict) else {}

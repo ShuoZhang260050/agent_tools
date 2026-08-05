@@ -14,6 +14,7 @@ _MAX_RETURN_CHARS = 20000
 
 
 class DownloadFileTool(BaseTool):
+    """远程文件下载工具。"""
     name: str = "download_file"
     description: str = (
         "从 URL 下载文件。文本类文件（txt/md/csv/json/log）返回内容，"
@@ -22,6 +23,7 @@ class DownloadFileTool(BaseTool):
     )
 
     def _run(self, url: str, filename: str = "", config: RunnableConfig = None) -> str:
+        """下载远程文件。"""
         parsed = urlparse(url)
         if parsed.scheme not in ("http", "https"):
             return "仅支持 http 和 https URL。"

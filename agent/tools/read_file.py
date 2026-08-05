@@ -18,6 +18,7 @@ _BLOCKED_FILES = {".env", ".env.local", ".env.production"}
 
 
 class ReadFileTool(BaseTool):
+    """文件读取工具。"""
     name: str = "read_file"
     description: str = (
         "读取本地文件内容（代码、文档、配置）。大文件请分行读取。"
@@ -27,6 +28,7 @@ class ReadFileTool(BaseTool):
 
     def _run(self, path: str, start_line: int = 1, end_line: int = 0,
              config: RunnableConfig = None) -> str:
+        """读取文件内容支持分行和多种编码。"""
         from agent.memory.user_memory import get_workspace
         from agent.sandbox.shadow import get_active_workspace
 

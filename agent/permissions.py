@@ -29,10 +29,12 @@ SENSITIVE_TOOLS = {
 
 
 def is_sensitive(name: str) -> bool:
+    """判断工具是否为敏感工具。"""
     return name in SENSITIVE_TOOLS
 
 
 def permission_prompt_section(permission: str) -> str:
+    """生成权限说明的提示词片段。"""
     sensitive = "、".join(sorted(SENSITIVE_TOOLS))
     if permission == REQUEST_APPROVAL:
         return (
@@ -59,6 +61,7 @@ def permission_prompt_section(permission: str) -> str:
 
 @wrap_tool_call(name="PermissionGateMiddleware")
 def permission_gate(request, handler):
+    """权限审批中间件，敏感工具执行前暂停等待确认。"""
     tool_call = request.tool_call or {}
     name = tool_call.get("name", "")
     call_id = tool_call.get("id", "")
@@ -85,6 +88,7 @@ def permission_gate(request, handler):
 
 
 def find_pending_approval(graph, config) -> dict | None:
+    """在图状态中查找待审批的中断。"""
     try:
         state = graph.get_state(config)
     except Exception:

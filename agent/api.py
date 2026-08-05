@@ -69,10 +69,12 @@ _STATIC_DIR = Path(__file__).parent / "static"
 
 
 def _sse(obj) -> str:
+    """将对象序列化为 SSE 事件字符串。"""
     return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
 
 
 def _serialize_msg(m) -> dict:
+    """将 LangChain 消息对象序列化为前端可用的 dict。"""
     cls = type(m).__name__
     if cls == "HumanMessage":
         content = m.content
@@ -122,6 +124,7 @@ def _serialize_msg(m) -> dict:
 
 
 class ChatReq(BaseModel):
+    """流式对话请求模型。"""
     message: str
     thread_id: str | None = None
     image: str | None = None
@@ -132,33 +135,39 @@ class ChatReq(BaseModel):
 
 
 class ResumeReq(BaseModel):
+    """恢复审批中断的请求模型。"""
     thread_id: str
     decision: str
     permission: str = DEFAULT_PERMISSION
 
 
 class AuthReq(BaseModel):
+    """用户认证请求模型。"""
     username: str
     password: str
 
 
 @app.get("/", response_class=HTMLResponse)
 def index():
+    """返回前端单页 HTML。"""
     return HTMLResponse((_STATIC_DIR / "index.html").read_text(encoding="utf-8"))
 
 
 @app.get("/health")
 def health():
+    """健康检查端点。"""
     return {"status": "ok"}
 
 
 @app.get("/tools")
 def tools():
+    """列出所有已注册工具。"""
     return [{"name": t.name, "description": t.description} for t in get_tools()]
 
 
 @app.get("/models")
 def models():
+    """列出可用模型及视觉能力。"""
     settings = Settings()
     avail = [m.strip() for m in settings.available_models.split(",") if m.strip()]
     if not avail:
@@ -169,12 +178,14 @@ def models():
 
 @app.get("/permissions")
 def permissions():
+    """列出权限选项及默认值。"""
     from agent.permissions import PERMISSION_CHOICES
     return {"choices": PERMISSION_CHOICES, "default": DEFAULT_PERMISSION}
 
 
 @app.post("/register")
 def register_endpoint(req: AuthReq):
+    """用户注册端点。"""
     init_tables()
     try:
         user = register_user(req.username, req.password)
@@ -186,6 +197,7 @@ def register_endpoint(req: AuthReq):
 
 @app.post("/login")
 def login_endpoint(req: AuthReq):
+    """用户登录端点。"""
     init_tables()
     user = authenticate(req.username, req.password)
     if not user:
@@ -199,6 +211,7 @@ def login_endpoint(req: AuthReq):
 
 @app.get("/me")
 def me(current: dict = Depends(get_current_user)):
+    """获取当前登录用户信息。"""
     return current
 
 
@@ -316,6 +329,7 @@ def _stream_agent(graph, config, input_value, permission: str):
 
 @app.post("/chat")
 async def chat(req: ChatReq, current: dict = Depends(get_current_user)):
+    """流式对话端点，返回 SSE 事件流。"""
     graph = get_graph(req.model)
     tid = req.thread_id or str(uuid.uuid4())
     is_new = req.thread_id is None
@@ -334,6 +348,7 @@ async def chat(req: ChatReq, current: dict = Depends(get_current_user)):
     file_name = req.attachment_name
 
     def gen():
+        """生成 SSE 事件流的内部函数。"""
         try:
             if image_data:
                 settings = Settings()
@@ -404,6 +419,7 @@ def delete_session(tid: str, current: dict = Depends(get_current_user)):
 
 
 class RenameReq(BaseModel):
+    """重命名会话的请求模型。"""
     title: str
 
 
