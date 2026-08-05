@@ -5,6 +5,7 @@
 ## 特性
 
 - **ReAct 工具循环**：基于 `langchain.agents.create_agent`，LLM 自主决策调用工具 -> 观察结果 -> 再决策
+- **Shadow Workspace 沙箱**：每个 turn 懒创建工作空间过滤副本，所有工具操作 shadow，turn 结束后用户审批同步/拒绝，同步前自动快照支持回滚，同步前可运行验证命令（pytest/ruff/build），验证失败阻止同步
 - **用户认证**：JWT 登录/注册，用户隔离的记忆与会话
 - **RAG 知识库**：文档上传（txt/md/pdf）-> 分块 -> 向量化 -> 语义检索，按 user 隔离
 - **可观测性**：TracingCallbackHandler 记录每次 LLM/工具调用的耗时与 token 用量，前端调试面板可视化
@@ -13,7 +14,7 @@
 - **SQLite 持久记忆**：按 `thread_id` 隔离，重启不丢上下文
 - **上下文工程栈**：结构化系统提示词（XML+Markdown）+ 用户记忆注入 + 摘要压缩 + 状态栏 + 任务追踪 + 预算控制 + 提示注入防御
 - **装饰器工具注册**：加工具只需 `@register @tool`，无需改中央清单
-- **完整测试**：76 个测试覆盖工具、ReAct 循环、认证、记忆隔离、RAG、追踪、API/CLI
+- **完整测试**：216 个测试覆盖工具、ReAct 循环、认证、记忆隔离、RAG、追踪、API/CLI、shadow 沙箱、验证门
 
 ## 安装
 
@@ -98,20 +99,22 @@ print(out["messages"][-1].content)
 前端：Library / CLI (click) / API (FastAPI SSE)
         │  都只调用 graph
         ▼
-核心：create_agent(model, tools, [dynamic_prompt, todo, limit, summarization, trim, state_bar], checkpointer)
+核心：create_agent(model, tools, [dynamic_prompt, todo, limit, permission_gate, shadow_gate, summarization, trim, state_bar], checkpointer)
         │
-   ┌────┴────────┬─────────────┬──────────────────┐
-   ▼             ▼             ▼                  ▼
- LLM 工厂       工具注册表      记忆层              配置
- build_llm     get_tools()     SQLite checkpointer  Settings
- (OpenAI兼容)  (@register @tool) + user_memory      (.env)
-                               trim + state_bar
+   ┌────┴────────┬─────────────┬──────────────────┬──────────────┐
+   ▼             ▼             ▼                  ▼              ▼
+ LLM 工厂       工具注册表      记忆层              配置           Shadow 沙箱
+ build_llm     get_tools()     SQLite checkpointer  Settings       sandbox/shadow.py
+ (OpenAI兼容)  (@register @tool) + user_memory      (.env)         sandbox/snapshot.py
+                               trim + state_bar                    middleware/shadow_gate.py
 ```
 
 - `agent/config.py` — pydantic-settings 读取 `.env`，单一配置源
 - `agent/llm/factory.py` — 按 `LLM_PROVIDER` 分派构建 LLM
 - `agent/tools/` — `registry.py` 注册表 + `calculator.py` / `web_search.py` 示例工具
-- `agent/memory/` — `checkpointer.py`（SQLite）+ `trimming.py`（滑动窗口中间件）
+- `agent/memory/` - `checkpointer.py`（SQLite）+ `trimming.py`（滑动窗口中间件）+ `user_memory.py`（用户记忆/工作空间）
+- `agent/sandbox/` - Shadow Workspace 沙箱：`shadow.py`（ShadowManager 过滤拷贝/diff/sync/verify）+ `snapshot.py`（快照备份/恢复/回滚）
+- `agent/middleware/` - `shadow_gate.py`（turn 首次工具调用时创建 shadow）
 - `agent/prompts.py` — system prompt 常量
 - `agent/graph.py` — `build_graph()` 装配
 - `agent/cli.py` / `agent/api.py` — 前端
@@ -128,6 +131,29 @@ print(out["messages"][-1].content)
 | 跨会话用户记忆 | 已内置 `agent/memory/user_memory.py` + `save_memory` 工具，按 `user_id` 隔离 |
 | 自定义图/多智能体 | 把 `graph.build_graph` 内部换成手写 `StateGraph`，上层 CLI/API 不变 |
 | 动态 system prompt | 改用 `langchain.agents.middleware` 的 `dynamic_prompt` 中间件（已在 `graph.py` 中用于注入用户记忆） |
+| 调整 shadow 大小上限 | 改 `agent/sandbox/shadow.py` 的 `MAX_SHADOW_BYTES`（默认 200MB） |
+| 调整 shadow 跳过目录 | 改 `agent/sandbox/shadow.py` 的 `SKIP_DIRS` |
+| 默认验证命令 | 改前端 `index.html` 中 `sync-verify-cmd` 的 `value` 属性 |
+
+## Shadow Workspace 沙箱
+
+所有文件操作（`write_file`/`edit_file`）和命令执行（`run_command`/`run_python`）在 shadow 工作空间副本上进行，不直接修改用户真实工作空间。
+
+**工作流程**：
+1. Agent turn 首次工具调用时，`shadow_gate` 中间件懒创建工作空间过滤副本（跳过 `.git`/`node_modules`/`.venv` 等，尊重 `.gitignore`，上限 200MB）
+2. 所有工具操作 shadow 路径（`get_active_workspace()` 优先于 `get_workspace()`）
+3. Turn 结束时，`done` 事件携带 `pending_sync` + diff（added/modified/deleted 文件列表）
+4. 前端显示 sync 审批面板：
+   - **验证**：输入验证命令（如 `pytest`/`ruff check`），在 shadow 中运行，失败则禁用同步按钮
+   - **同步到工作空间**：先快照（备份被改文件到 `file_snapshots` 表），再将 shadow 变更 apply 到真实工作空间
+   - **拒绝变更**：从最新快照恢复真实工作空间，丢弃 shadow 变更
+5. Agent 系统提示词要求：编写代码后必须运行测试/lint，失败必须修复，不能宣称完成
+
+**API 端点**：
+- `GET /workspace/diff?thread_id=` - 获取当前 diff
+- `POST /workspace/verify?thread_id=&command=` - 在 shadow 中运行验证命令
+- `POST /workspace/sync?thread_id=&verify_command=` - 同步（可选验证）
+- `POST /workspace/revert?thread_id=` - 从快照恢复
 
 ## 测试
 
