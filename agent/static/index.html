@@ -190,6 +190,13 @@
   .sync-msg { font-size: 13px; color: var(--muted); }
   .sync-msg.sync-ok { color: #065f46; }
   .sync-msg.sync-err { color: #dc2626; }
+  .sync-verify { display: flex; gap: 8px; margin-bottom: 8px; }
+  .sync-verify-cmd { flex: 1; border: 1px solid var(--border); border-radius: 8px; padding: 6px 10px; font-size: 12px; font-family: monospace; }
+  .sync-verify-btn { padding: 6px 14px; border-radius: 8px; font-size: 12px; cursor: pointer; border: 1px solid var(--border); background: var(--panel); color: var(--text); }
+  .sync-verify-btn:hover { border-color: var(--accent); }
+  .sync-verify-result { margin-bottom: 8px; }
+  .sync-verify-output { max-height: 200px; overflow-y: auto; background: #1e1e1e; color: #d4d4d4; padding: 8px; border-radius: 6px; font-size: 11px; white-space: pre-wrap; word-break: break-word; }
+  .sync-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   /* 输入区 */
   #input-bar { padding: 16px 20px; border-top: 1px solid var(--border); background: var(--panel); }
   #input-wrap { max-width: 760px; margin: 0 auto; display: flex; gap: 10px; align-items: flex-end; }
@@ -772,6 +779,12 @@ function renderSyncPanel(diff, tid) {
   for (const f of deleted) html += '<div class="sync-file sync-deleted"><span class="sf-icon">-</span> ' + escapeHtml(f) + '</div>';
   html += '</div>';
 
+  html += '<div class="sync-verify">';
+  html += '<input class="sync-verify-cmd" type="text" placeholder="验证命令（如 pytest / ruff check .）" value="python -m pytest tests/ -q">';
+  html += '<button class="sync-btn sync-verify-btn">验证</button>';
+  html += '</div>';
+  html += '<div class="sync-verify-result"></div>';
+
   html += '<div class="sync-actions">';
   html += '<button class="sync-btn sync-apply">同步到工作空间</button>';
   html += '<button class="sync-btn sync-revert">拒绝变更</button>';
@@ -780,18 +793,54 @@ function renderSyncPanel(diff, tid) {
   panel.innerHTML = html;
   scrollBottom();
 
-  panel.querySelector(".sync-apply").addEventListener("click", async () => {
-    panel.querySelector(".sync-actions").innerHTML = '<span class="sync-msg">同步中...</span>';
+  let verified = false;
+
+  panel.querySelector(".sync-verify-btn").addEventListener("click", async () => {
+    const cmd = panel.querySelector(".sync-verify-cmd").value.trim();
+    if (!cmd) return;
+    const resultEl = panel.querySelector(".sync-verify-result");
+    resultEl.innerHTML = '<span class="sync-msg">验证中...</span>';
     try {
-      const resp = await fetch("/workspace/sync?thread_id=" + encodeURIComponent(tid), {
+      const resp = await fetch("/workspace/verify?thread_id=" + encodeURIComponent(tid) + "&command=" + encodeURIComponent(cmd), {
         method: "POST",
         headers: { "Authorization": "Bearer " + authToken },
       });
       const data = await resp.json();
       if (resp.ok) {
-        syncPending = false;
-        setSendingState(false);
-        panel.querySelector(".sync-actions").innerHTML = '<span class="sync-msg sync-ok">已同步 ' + (data.synced || 0) + ' 项变更</span>';
+        verified = data.passed;
+        const cls = data.passed ? "sync-ok" : "sync-err";
+        const icon = data.passed ? "✓" : "✗";
+        let out = '<span class="sync-msg ' + cls + '">' + icon + ' 验证' + (data.passed ? "通过" : "失败（退出码 " + data.returncode + "）") + '</span>';
+        if (data.output) out += '<pre class="sync-verify-output">' + escapeHtml(data.output) + '</pre>';
+        resultEl.innerHTML = out;
+        panel.querySelector(".sync-apply").disabled = !data.passed;
+      } else {
+        resultEl.innerHTML = '<span class="sync-msg sync-err">' + escapeHtml(data.detail || "验证请求失败") + '</span>';
+      }
+    } catch (e) {
+      resultEl.innerHTML = '<span class="sync-msg sync-err">网络错误：' + escapeHtml(e.message) + '</span>';
+    }
+    scrollBottom();
+  });
+
+  panel.querySelector(".sync-apply").addEventListener("click", async () => {
+    const cmd = panel.querySelector(".sync-verify-cmd").value.trim();
+    const params = "thread_id=" + encodeURIComponent(tid) + (cmd ? "&verify_command=" + encodeURIComponent(cmd) : "");
+    panel.querySelector(".sync-actions").innerHTML = '<span class="sync-msg">同步中...</span>';
+    try {
+      const resp = await fetch("/workspace/sync?" + params, {
+        method: "POST",
+        headers: { "Authorization": "Bearer " + authToken },
+      });
+      const data = await resp.json();
+      if (resp.ok && data.synced !== undefined) {
+        if (data.verified === false) {
+          panel.querySelector(".sync-actions").innerHTML = '<span class="sync-msg sync-err">验证失败，已阻止同步：' + escapeHtml(data.verify_output || "") + '</span>';
+        } else {
+          syncPending = false;
+          setSendingState(false);
+          panel.querySelector(".sync-actions").innerHTML = '<span class="sync-msg sync-ok">已同步 ' + (data.synced || 0) + ' 项变更</span>';
+        }
       } else {
         panel.querySelector(".sync-actions").innerHTML = '<span class="sync-msg sync-err">' + escapeHtml(data.detail || "同步失败") + '</span>';
       }

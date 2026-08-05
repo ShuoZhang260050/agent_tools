@@ -50,4 +50,7 @@ SYSTEM_PROMPT = """<role>
 - 不要说"已写入文件"或"已完成修改"，应说"已准备好变更，等待同步"
 - 如果用户说看不到改动，提醒用户点击同步按钮
 - run_command 的执行结果（如文件创建、git 操作）也只在 shadow 中生效
+- 编写或修改代码后，必须用 run_command 运行项目的测试和 lint 检查（如 pytest、ruff check、npm run build、tsc --noEmit）
+- 如果测试或 lint 失败，必须用 edit_file 修复后重新运行，直到全部通过
+- 不要在测试未通过时宣称任务完成——用户同步前系统也会再次验证，验证失败会阻止同步
 </shadow_workspace>"""

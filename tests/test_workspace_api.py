@@ -156,3 +156,89 @@ class TestRevertWorkspace:
                 assert r.status_code == 404
         finally:
             app.dependency_overrides.clear()
+
+
+class TestVerifyShadow:
+    def test_verify_pass(self, tmp_path, monkeypatch):
+        real_ws = _setup_workspace(tmp_path, monkeypatch)
+        shadow_path = get_shadow_path(1, "v1")
+        ShadowManager.create_shadow(real_ws, shadow_path)
+        set_active_shadow(1, "v1", shadow_path)
+        app.dependency_overrides[get_current_user] = _fake_user
+        try:
+            with TestClient(app) as c:
+                r = c.post("/workspace/verify", params={"thread_id": "v1", "command": "echo ok"})
+                assert r.status_code == 200
+                data = r.json()
+                assert data["passed"] is True
+                assert "ok" in data["output"]
+        finally:
+            clear_active_shadow(1, "v1")
+            app.dependency_overrides.clear()
+
+    def test_verify_fail(self, tmp_path, monkeypatch):
+        real_ws = _setup_workspace(tmp_path, monkeypatch)
+        shadow_path = get_shadow_path(1, "v2")
+        ShadowManager.create_shadow(real_ws, shadow_path)
+        set_active_shadow(1, "v2", shadow_path)
+        app.dependency_overrides[get_current_user] = _fake_user
+        try:
+            with TestClient(app) as c:
+                r = c.post("/workspace/verify", params={"thread_id": "v2", "command": "exit 1"})
+                assert r.status_code == 200
+                data = r.json()
+                assert data["passed"] is False
+                assert data["returncode"] == 1
+        finally:
+            clear_active_shadow(1, "v2")
+            app.dependency_overrides.clear()
+
+    def test_verify_no_shadow(self, tmp_path, monkeypatch):
+        _setup_workspace(tmp_path, monkeypatch)
+        app.dependency_overrides[get_current_user] = _fake_user
+        try:
+            with TestClient(app) as c:
+                r = c.post("/workspace/verify", params={"thread_id": "v3", "command": "echo ok"})
+                assert r.status_code == 400
+        finally:
+            app.dependency_overrides.clear()
+
+
+class TestSyncWithVerify:
+    def test_sync_verify_pass(self, tmp_path, monkeypatch):
+        real_ws = _setup_workspace(tmp_path, monkeypatch)
+        shadow_path = get_shadow_path(1, "sv1")
+        ShadowManager.create_shadow(real_ws, shadow_path)
+        (Path(shadow_path) / "file1.py").write_text("modified", encoding="utf-8")
+        set_active_shadow(1, "sv1", shadow_path)
+        app.dependency_overrides[get_current_user] = _fake_user
+        try:
+            with TestClient(app) as c:
+                r = c.post("/workspace/sync", params={"thread_id": "sv1", "verify_command": "echo ok"})
+                assert r.status_code == 200
+                data = r.json()
+                assert data["synced"] == 1
+                assert data["verified"] is True
+                assert (Path(real_ws) / "file1.py").read_text() == "modified"
+        finally:
+            clear_active_shadow(1, "sv1")
+            app.dependency_overrides.clear()
+
+    def test_sync_verify_fail_blocks_sync(self, tmp_path, monkeypatch):
+        real_ws = _setup_workspace(tmp_path, monkeypatch)
+        shadow_path = get_shadow_path(1, "sv2")
+        ShadowManager.create_shadow(real_ws, shadow_path)
+        (Path(shadow_path) / "file1.py").write_text("modified", encoding="utf-8")
+        set_active_shadow(1, "sv2", shadow_path)
+        app.dependency_overrides[get_current_user] = _fake_user
+        try:
+            with TestClient(app) as c:
+                r = c.post("/workspace/sync", params={"thread_id": "sv2", "verify_command": "exit 1"})
+                assert r.status_code == 200
+                data = r.json()
+                assert data["synced"] == 0
+                assert data["verified"] is False
+                assert (Path(real_ws) / "file1.py").read_text() == "original"
+        finally:
+            clear_active_shadow(1, "sv2")
+            app.dependency_overrides.clear()

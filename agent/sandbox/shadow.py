@@ -2,6 +2,7 @@ import os
 import shutil
 import fnmatch
 import hashlib
+import subprocess
 import tempfile
 import threading
 from pathlib import Path
@@ -238,3 +239,36 @@ def create_shadow_if_needed(user_id: int, thread_id: str) -> str | None:
     ShadowManager.create_shadow(real_ws, shadow_path)
     set_active_shadow(user_id, thread_id, shadow_path)
     return shadow_path
+
+
+def verify_shadow(shadow_path: str, command: str, timeout: int = 120) -> dict:
+    try:
+        result = subprocess.run(
+            command,
+            shell=True,
+            cwd=shadow_path,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        output = (result.stdout or "") + (result.stderr or "")
+        output = output.strip()
+        if len(output) > 20000:
+            output = output[:20000] + "\n[...已截断]"
+        return {
+            "passed": result.returncode == 0,
+            "returncode": result.returncode,
+            "output": output,
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            "passed": False,
+            "returncode": -1,
+            "output": f"验证命令超时（{timeout}s）",
+        }
+    except Exception as e:
+        return {
+            "passed": False,
+            "returncode": -1,
+            "output": f"执行失败：{type(e).__name__}: {e}",
+        }

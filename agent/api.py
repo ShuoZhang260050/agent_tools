@@ -41,6 +41,7 @@ from agent.sandbox.shadow import (
     get_active_workspace,
     clear_active_shadow,
     ShadowManager,
+    verify_shadow,
 )
 from agent.sandbox.snapshot import (
     init_snapshots_table,
@@ -587,8 +588,11 @@ def get_workspace_diff_api(thread_id: str, current: dict = Depends(get_current_u
 
 
 @app.post("/workspace/sync")
-def sync_workspace_api(thread_id: str, current: dict = Depends(get_current_user)):
-    """将 shadow 工作空间的变更同步到真实工作空间。同步前自动快照。"""
+def sync_workspace_api(thread_id: str, verify_command: str = "",
+                        current: dict = Depends(get_current_user)):
+    """将 shadow 工作空间的变更同步到真实工作空间。同步前自动快照。
+    若提供 verify_command，则先在 shadow 中运行验证，失败则拒绝同步。
+    """
     uid = current["id"]
     shadow_path = get_active_workspace(uid, thread_id)
     if not shadow_path:
@@ -597,15 +601,43 @@ def sync_workspace_api(thread_id: str, current: dict = Depends(get_current_user)
     if not real_ws:
         raise HTTPException(status_code=400, detail="未设置真实工作空间")
 
+    verify_result = None
+    if verify_command:
+        verify_result = verify_shadow(shadow_path, verify_command)
+        if not verify_result["passed"]:
+            return {
+                "synced": 0,
+                "verified": False,
+                "verify_output": verify_result["output"],
+                "message": "验证失败，已阻止同步。请修复后重试。",
+            }
+
     diff = ShadowManager.list_shadow_diff(shadow_path, real_ws)
     if not (diff["added"] or diff["modified"] or diff["deleted"]):
         clear_active_shadow(uid, thread_id)
-        return {"synced": 0, "message": "无变更需要同步"}
+        return {"synced": 0, "verified": True, "message": "无变更需要同步"}
 
     snapshot_id = save_snapshot(Settings().sqlite_path, uid, thread_id, real_ws, diff)
     result = ShadowManager.apply_shadow_to_real(shadow_path, real_ws)
     clear_active_shadow(uid, thread_id)
-    return {"synced": result["synced"], "bytes": result["bytes"], "snapshot_id": snapshot_id}
+    return {
+        "synced": result["synced"],
+        "bytes": result["bytes"],
+        "snapshot_id": snapshot_id,
+        "verified": verify_result is None or verify_result["passed"],
+    }
+
+
+@app.post("/workspace/verify")
+def verify_workspace_api(thread_id: str, command: str,
+                         current: dict = Depends(get_current_user)):
+    """在 shadow 工作空间中运行验证命令（如 pytest、ruff check），返回结果。"""
+    uid = current["id"]
+    shadow_path = get_active_workspace(uid, thread_id)
+    if not shadow_path:
+        raise HTTPException(status_code=400, detail="没有活跃的 shadow 工作空间")
+    result = verify_shadow(shadow_path, command)
+    return result
 
 
 @app.post("/workspace/revert")
