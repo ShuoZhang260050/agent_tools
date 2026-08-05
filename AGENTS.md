@@ -81,7 +81,8 @@ tests/
 - 路径处理：统一用 `pathlib.Path`，不用 `os.path` 拼接
 - 工具内 workspace 解析：`get_active_workspace(uid, tid) or get_workspace(uid)` 一行，shadow 优先
 - 错误消息：中文，面向用户可读
-- 注释：不主动添加注释，除非用户要求
+- Docstring：函数和类主动添加 docstring（中文，一句话说明用途）
+- 注释：不主动添加行内注释，除非逻辑复杂或用户要求
 - 系统提示词：XML 标签分区（`<role>`/`<rules>`/`<shadow_workspace>` 等）
 - 提交消息：`feat:` / `fix:` / `refactor:` / `docs:` 前缀
 
