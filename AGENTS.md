@@ -72,7 +72,7 @@ agent/
     index.html       # 前端单页（JS + CSS 内联）
 tests/
   conftest.py        # FakeToolModel 测试替身
-  test_*.py          # 216 个测试
+  test_*.py          # 234 个测试
 ```
 
 ## 代码约定
@@ -91,8 +91,8 @@ tests/
 所有文件操作和命令执行在 shadow 副本上进行，不直接修改真实工作空间。
 
 **关键机制**：
-- `shadow_gate` 中间件在 turn 首次工具调用时懒创建 shadow 副本（过滤 `.git`/`node_modules`/`.venv` 等，尊重 `.gitignore`，上限 200MB）
-- 所有 6 个工具（file_ops/read_file/list_files/search_files/run_command/run_python）通过 `get_active_workspace()` 重定向到 shadow
+- `shadow_gate` 中间件在 turn 首次沙箱工具调用时懒创建 shadow 副本（过滤 `.git`/`node_modules`/`.venv` 等，尊重 `.gitignore`，上限 200MB）；创建失败时 raise RuntimeError 拒绝整个 turn
+- 所有 7 个沙箱工具（write_file/edit_file/read_file/list_files/search_files/run_command/run_python）通过 `get_active_workspace()` 重定向到 shadow
 - Turn 结束时 `done` 事件携带 `pending_sync` + diff
 - 前端 sync 面板：验证（pytest/ruff）-> 同步（先快照再 apply）或 拒绝（从快照恢复）
 - 系统提示词要求 agent 编写代码后必须运行测试，测试未通过不能宣称完成

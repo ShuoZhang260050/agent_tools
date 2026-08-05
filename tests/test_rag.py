@@ -102,3 +102,56 @@ def test_search_empty_db(tmp_path, monkeypatch):
     emb = FakeEmbeddings()
     results = search(1, "anything", emb, top_k=3)
     assert results == []
+
+
+def test_retrieve_tool_no_user_id():
+    """无 user_id 时返回错误提示。"""
+    from agent.tools.rag_tool import RetrieveTool
+    tool = RetrieveTool()
+    out = tool._run("test query")
+    assert "未识别用户身份" in out
+
+
+def test_retrieve_tool_no_results(monkeypatch):
+    """知识库为空时返回提示。"""
+    from agent.tools.rag_tool import RetrieveTool
+
+    class FakeSettings:
+        embedding_model = "fake"
+        embedding_base_url = None
+        embedding_api_key = None
+
+    monkeypatch.setattr("agent.config.Settings", lambda: FakeSettings())
+    monkeypatch.setattr("agent.memory.vectorstore.build_embeddings",
+                        lambda s: FakeEmbeddings())
+    monkeypatch.setattr("agent.memory.vectorstore.search",
+                        lambda uid, q, emb, top_k=3: [])
+
+    tool = RetrieveTool()
+    out = tool._run("test", config={"configurable": {"user_id": 1}})
+    assert "暂无" in out or "尚未上传" in out
+
+
+def test_retrieve_tool_with_results(monkeypatch):
+    """检索到结果时返回格式化的知识库内容。"""
+    from agent.tools.rag_tool import RetrieveTool
+
+    class FakeSettings:
+        embedding_model = "fake"
+        embedding_base_url = None
+        embedding_api_key = None
+
+    monkeypatch.setattr("agent.config.Settings", lambda: FakeSettings())
+    monkeypatch.setattr("agent.memory.vectorstore.build_embeddings",
+                        lambda s: FakeEmbeddings())
+    monkeypatch.setattr("agent.memory.vectorstore.search",
+                        lambda uid, q, emb, top_k=3: [
+                            {"filename": "doc.txt", "chunk_index": 0,
+                             "score": 0.95, "content": "hello world"}
+                        ])
+
+    tool = RetrieveTool()
+    out = tool._run("test", config={"configurable": {"user_id": 1}})
+    assert "doc.txt" in out
+    assert "hello world" in out
+    assert "<external_content" in out

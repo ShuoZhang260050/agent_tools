@@ -14,7 +14,7 @@
 - **SQLite 持久记忆**：按 `thread_id` 隔离，重启不丢上下文
 - **上下文工程栈**：结构化系统提示词（XML+Markdown）+ 用户记忆注入 + 摘要压缩 + 状态栏 + 任务追踪 + 预算控制 + 提示注入防御
 - **装饰器工具注册**：加工具只需 `@register @tool`，无需改中央清单
-- **完整测试**：216 个测试覆盖工具、ReAct 循环、认证、记忆隔离、RAG、追踪、API/CLI、shadow 沙箱、验证门
+- **完整测试**：234 个测试覆盖工具、ReAct 循环、认证、记忆隔离、RAG、追踪、API/CLI、shadow 沙箱、验证门
 
 ## 安装
 
@@ -46,7 +46,7 @@ LLM_API_KEY=sk-...
 # 本地 Ollama: http://localhost:11434/v1
 LLM_BASE_URL=
 LLM_TEMPERATURE=0.7
-TOKEN_BUDGET=6000
+TOKEN_BUDGET=500000
 SQLITE_PATH=checkpoints.sqlite
 API_HOST=0.0.0.0
 API_PORT=8000
@@ -137,7 +137,7 @@ print(out["messages"][-1].content)
 
 ## Shadow Workspace 沙箱
 
-所有文件操作（`write_file`/`edit_file`）和命令执行（`run_command`/`run_python`）在 shadow 工作空间副本上进行，不直接修改用户真实工作空间。
+所有文件操作（`write_file`/`edit_file`/`read_file`/`list_files`/`search_files`）和命令执行（`run_command`/`run_python`）在 shadow 工作空间副本上进行，不直接修改用户真实工作空间。
 
 **工作流程**：
 1. Agent turn 首次工具调用时，`shadow_gate` 中间件懒创建工作空间过滤副本（跳过 `.git`/`node_modules`/`.venv` 等，尊重 `.gitignore`，上限 200MB）
