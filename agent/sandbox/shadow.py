@@ -188,9 +188,14 @@ class ShadowManager:
         }
 
     @staticmethod
-    def apply_shadow_to_real(shadow_path: str, real_path: str) -> dict:
-        """将 shadow 变更同步到真实工作空间。"""
+    def apply_shadow_to_real(shadow_path: str, real_path: str,
+                             only_files: set[str] | None = None) -> dict:
+        """将 shadow 变更同步到真实工作空间，可指定仅同步部分文件。"""
         diff = ShadowManager.list_shadow_diff(shadow_path, real_path)
+        if only_files is not None:
+            diff["added"] = [f for f in diff["added"] if f in only_files]
+            diff["modified"] = [f for f in diff["modified"] if f in only_files]
+            diff["deleted"] = [f for f in diff["deleted"] if f in only_files]
         real = Path(real_path)
         shadow = Path(shadow_path)
         synced = 0

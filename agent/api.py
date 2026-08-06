@@ -154,6 +154,11 @@ class AuthReq(BaseModel):
     password: str
 
 
+class SyncReq(BaseModel):
+    """同步请求模型，可指定仅同步部分文件。"""
+    files: list[str] | None = None
+
+
 @app.get("/health")
 def health():
     """健康检查端点。"""
@@ -618,9 +623,11 @@ def get_workspace_diff_api(thread_id: str, current: dict = Depends(get_current_u
 
 @app.post("/workspace/sync")
 def sync_workspace_api(thread_id: str, verify_command: str = "",
+                        req: SyncReq = SyncReq(),
                         current: dict = Depends(get_current_user)):
     """将 shadow 工作空间的变更同步到真实工作空间。同步前自动快照。
     若提供 verify_command，则先在 shadow 中运行验证，失败则拒绝同步。
+    可在 req.files 中指定仅同步部分文件。
     """
     uid = current["id"]
     shadow_path = get_active_workspace(uid, thread_id)
@@ -641,13 +648,18 @@ def sync_workspace_api(thread_id: str, verify_command: str = "",
                 "message": "验证失败，已阻止同步。请修复后重试。",
             }
 
+    only = set(req.files) if req.files else None
     diff = ShadowManager.list_shadow_diff(shadow_path, real_ws)
+    if only is not None:
+        diff["added"] = [f for f in diff["added"] if f in only]
+        diff["modified"] = [f for f in diff["modified"] if f in only]
+        diff["deleted"] = [f for f in diff["deleted"] if f in only]
     if not (diff["added"] or diff["modified"] or diff["deleted"]):
         clear_active_shadow(uid, thread_id)
         return {"synced": 0, "verified": True, "message": "无变更需要同步"}
 
     snapshot_id = save_snapshot(Settings().sqlite_path, uid, thread_id, real_ws, diff)
-    result = ShadowManager.apply_shadow_to_real(shadow_path, real_ws)
+    result = ShadowManager.apply_shadow_to_real(shadow_path, real_ws, only_files=only)
     clear_active_shadow(uid, thread_id)
     return {
         "synced": result["synced"],
