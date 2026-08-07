@@ -14,6 +14,7 @@ from agent.sandbox.shadow import (
     create_shadow_if_needed,
     SKIP_DIRS,
     MAX_SHADOW_BYTES,
+    _long_path,
 )
 
 
@@ -75,6 +76,66 @@ class TestCreateShadow:
     def test_nonexistent_source(self, shadow_dir):
         with pytest.raises(ValueError):
             ShadowManager.create_shadow("/nonexistent/path", shadow_dir)
+
+    def test_deep_nested_paths(self, tmp_path, shadow_dir):
+        """深嵌套路径不应触发 WinError 206（MAX_PATH 限制）。"""
+        deep = tmp_path / "real_ws_deep"
+        deep.mkdir()
+        parts = ["a"] * 20 + ["very_long_directory_name_for_testing_purposes"]
+        nested = deep
+        for p in parts:
+            nested = nested / p
+        nested.mkdir(parents=True)
+        (nested / "deep_file.py").write_text("x = 1", encoding="utf-8")
+        result = ShadowManager.create_shadow(str(deep), shadow_dir)
+        assert result["files"] >= 1
+        assert (Path(shadow_dir) / "a" / "a").exists()
+
+    def test_deep_nested_diff_and_apply(self, tmp_path, shadow_dir):
+        """深嵌套路径的 diff 和 apply 也应正常工作。"""
+        deep = tmp_path / "real_ws_deep2"
+        deep.mkdir()
+        parts = ["lvl1", "lvl2", "lvl3", "lvl4", "lvl5", "lvl6",
+                 "lvl7", "lvl8", "lvl9", "lvl10", "lvl11", "lvl12"]
+        nested = deep
+        for p in parts:
+            nested = nested / p
+        nested.mkdir(parents=True)
+        (nested / "target.py").write_text("val = 1", encoding="utf-8")
+        ShadowManager.create_shadow(str(deep), shadow_dir)
+        diff = ShadowManager.list_shadow_diff(shadow_dir, str(deep))
+        assert diff["added"] == []
+        assert diff["modified"] == []
+        assert diff["deleted"] == []
+        (Path(shadow_dir) / "lvl1" / "lvl2" / "lvl3" / "lvl4" / "lvl5" /
+         "lvl6" / "lvl7" / "lvl8" / "lvl9" / "lvl10" / "lvl11" /
+         "lvl12" / "target.py").write_text("val = 2", encoding="utf-8")
+        diff = ShadowManager.list_shadow_diff(shadow_dir, str(deep))
+        rel = os.path.join(*parts, "target.py")
+        assert rel in diff["modified"]
+        result = ShadowManager.apply_shadow_to_real(shadow_dir, str(deep))
+        assert result["synced"] >= 1
+
+
+class TestLongPath:
+    def test_long_path_windows_prefix(self):
+        """_long_path 在 Windows 下添加 \\\\?\\ 前缀。"""
+        p = _long_path("C:\\Users\\test\\workspace")
+        if os.name == "nt":
+            assert p.startswith("\\\\?\\")
+        else:
+            assert p == "C:\\Users\\test\\workspace"
+
+    def test_long_path_idempotent(self):
+        """重复应用 _long_path 不应叠加前缀。"""
+        p1 = _long_path("C:\\Users\\test")
+        p2 = _long_path(p1)
+        assert p1 == p2
+
+    def test_long_path_makes_absolute(self):
+        """_long_path 返回绝对路径。"""
+        p = _long_path(".")
+        assert os.path.isabs(p) or p.startswith("\\\\?\\")
 
 
 class TestListShadowDiff:

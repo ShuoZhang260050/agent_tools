@@ -15,6 +15,17 @@ MAX_SHADOW_BYTES = 200 * 1024 * 1024
 VERIFY_TIMEOUT = 120
 
 
+def _long_path(path: str | Path) -> str:
+    """Windows 下为绝对路径添加 \\\\?\\ 前缀以绕过 MAX_PATH(260) 限制。"""
+    p = str(path)
+    if os.name != "nt" or p.startswith("\\\\?\\"):
+        return p
+    abs_p = os.path.abspath(p)
+    if abs_p.startswith("\\\\?\\"):
+        return abs_p
+    return "\\\\?\\" + abs_p
+
+
 def _get_skip_dirs() -> frozenset[str]:
     """从 Settings 读取 shadow 跳过目录集合，失败回退默认值。"""
     try:
@@ -95,8 +106,8 @@ class ShadowManager:
     @staticmethod
     def create_shadow(real_path: str, shadow_path: str) -> dict:
         """过滤拷贝真实工作空间到 shadow 路径，返回文件数和字节数。"""
-        src = Path(real_path).resolve()
-        dst = Path(shadow_path)
+        src = Path(_long_path(Path(real_path).resolve()))
+        dst = Path(_long_path(shadow_path))
         if not src.is_dir():
             raise ValueError(f"工作空间路径不是目录: {src}")
         dst.mkdir(parents=True, exist_ok=True)
@@ -145,8 +156,8 @@ class ShadowManager:
     @staticmethod
     def list_shadow_diff(shadow_path: str, real_path: str) -> dict:
         """对比 shadow 与真实工作空间的差异，返回 added/modified/deleted。"""
-        shadow = Path(shadow_path)
-        real = Path(real_path)
+        shadow = Path(_long_path(shadow_path))
+        real = Path(_long_path(real_path))
         skip_dirs = _get_skip_dirs()
         gitignore_patterns = _load_gitignore(real)
 
@@ -196,8 +207,8 @@ class ShadowManager:
             diff["added"] = [f for f in diff["added"] if f in only_files]
             diff["modified"] = [f for f in diff["modified"] if f in only_files]
             diff["deleted"] = [f for f in diff["deleted"] if f in only_files]
-        real = Path(real_path)
-        shadow = Path(shadow_path)
+        real = Path(_long_path(real_path))
+        shadow = Path(_long_path(shadow_path))
         synced = 0
         total_bytes = 0
 
@@ -253,8 +264,10 @@ def clear_active_shadow(user_id: int, thread_id: str) -> None:
     """清除活跃 shadow 并删除临时目录。"""
     with _shadow_lock:
         path = _active_shadows.pop((user_id, thread_id), None)
-    if path and os.path.isdir(path):
-        shutil.rmtree(path, ignore_errors=True)
+    if path:
+        lp = _long_path(path)
+        if os.path.isdir(lp):
+            shutil.rmtree(lp, ignore_errors=True)
 
 
 def clear_all_user_shadows(user_id: int) -> None:
@@ -263,8 +276,10 @@ def clear_all_user_shadows(user_id: int) -> None:
         keys = [k for k in _active_shadows if k[0] == user_id]
         paths = [_active_shadows.pop(k) for k in keys]
     for path in paths:
-        if path and os.path.isdir(path):
-            shutil.rmtree(path, ignore_errors=True)
+        if path:
+            lp = _long_path(path)
+            if os.path.isdir(lp):
+                shutil.rmtree(lp, ignore_errors=True)
 
 
 def create_shadow_if_needed(user_id: int, thread_id: str) -> str | None:
